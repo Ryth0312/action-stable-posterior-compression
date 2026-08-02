@@ -1,0 +1,46 @@
+{
+  "upload_type": "software",
+  "title": "Supplement B to \"Action-stable posterior compression under practical nonidentifiability, with an application to chromatography process design\": code and reproduction archive",
+  "description": "<p>Code and reproduction archive accompanying the article. Contains the mechanistic steric-mass-action model, the differentiable solver, the Bayesian calibration and decision pipeline, and a <b>synthetic twin</b> the whole pipeline runs on end to end on CPU.</p><p>The three antibody products analysed in the article are <b>not</b> included. Their elution and chromatographic purity traces are proprietary, and so are their identities, so they are absent from this archive rather than anonymised within it: no file name, no result file and no array key names a real product. Artifacts derived from those traces are available from the data owner under a data-use agreement; see the article's data availability statement.</p><p>The twin reproduces the identifiability structure the article's certificates address: at its known truth a 10% move in the main component's characteristic charge multiplies the fit residual by 9.8, while a 50% move in a basic component's steric factor multiplies it by 1.2.</p>",
+  "creators": [
+    {
+      "name": "Shi, Zheyu",
+      "affiliation": "Department of Computer Science, Brown University; Department of Technical Operations, Shanghai Henlius Biotech, Inc.",
+      "orcid": "0009-0002-8843-8172"
+    },
+    {
+      "name": "Ji, Dongni",
+      "affiliation": "Department of Technical Operations, Shanghai Henlius Biotech, Inc."
+    },
+    {
+      "name": "Xu, Weijie",
+      "affiliation": "Department of Technical Operations, Shanghai Henlius Biotech, Inc."
+    },
+    {
+      "name": "Han, Dongmei",
+      "affiliation": "Department of Technical Operations, Shanghai Henlius Biotech, Inc."
+    },
+    {
+      "name": "Hsu, Simon",
+      "affiliation": "Department of Technical Operations, Shanghai Henlius Biotech, Inc."
+    },
+    {
+      "name": "Chen, Ran",
+      "affiliation": "Department of Technical Operations, Shanghai Henlius Biotech, Inc."
+    }
+  ],
+  "license": "mit",
+  "access_right": "open",
+  "language": "eng",
+  "keywords": [
+    "Bayesian calibration",
+    "computer model calibration",
+    "practical nonidentifiability",
+    "decision-theoretic model reduction",
+    "posterior compression",
+    "steric mass action",
+    "ion-exchange chromatography",
+    "differentiable simulation",
+    "reproducible research"
+  ]
+}

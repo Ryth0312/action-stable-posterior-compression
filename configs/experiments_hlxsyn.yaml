@@ -1,0 +1,23 @@
+# Synthetic twin: the three-experiment design, written by scripts/make_synthetic_twin.py.
+buffer:
+  A_mol_L: 0.035
+  B_mol_L: 0.1
+experiments:
+- id: syn_25gL_25CV_20_95
+  loading_g_L: 25.0
+  gradient_start_pct: 20.0
+  gradient_end_pct: 95.0
+  gradient_length_CV: 25.0
+  data_file: data/synthetic_twin/syn_25gL_25CV_20_95.csv
+- id: syn_45gL_25CV_20_95
+  loading_g_L: 45.0
+  gradient_start_pct: 20.0
+  gradient_end_pct: 95.0
+  gradient_length_CV: 25.0
+  data_file: data/synthetic_twin/syn_45gL_25CV_20_95.csv
+- id: syn_35gL_25CV_05_105
+  loading_g_L: 35.0
+  gradient_start_pct: 5.0
+  gradient_end_pct: 105.0
+  gradient_length_CV: 25.0
+  data_file: data/synthetic_twin/syn_35gL_25CV_05_105.csv

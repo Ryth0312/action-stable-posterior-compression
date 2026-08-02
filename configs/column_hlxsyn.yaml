@@ -1,0 +1,12 @@
+# Synthetic twin: fictitious column, written by scripts/make_synthetic_twin.py.
+column_volume: 20.0
+column_length: 180.0
+flow_rate: 2.5
+superficial_velocity: 0.37
+total_porosity: 0.8
+particle_porosity: 0.5
+dax: 0.055
+ionic_capacity: 0.4
+particle_radius: 0.045
+dead_volume: 0.7
+grid_size: 51

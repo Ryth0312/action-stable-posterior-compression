@@ -1,0 +1,107 @@
+{
+  "product": "HLXSYN",
+  "purpose": "end-to-end reproduction target; the real products' raw traces are not released",
+  "column": {
+    "column_volume": 20.0,
+    "column_length": 180.0,
+    "flow_rate": 2.5,
+    "superficial_velocity": 0.37,
+    "total_porosity": 0.8,
+    "particle_porosity": 0.5,
+    "dax": 0.055,
+    "ionic_capacity": 0.4,
+    "particle_radius": 0.045,
+    "dead_volume": 0.7,
+    "grid_size": 51
+  },
+  "components_truth": [
+    {
+      "name": "SYN_A",
+      "type": "acid",
+      "fraction": 20.0,
+      "nu": 6.0,
+      "keq": 0.03,
+      "sigma": 17.0,
+      "kkin": 0.3,
+      "fit": true
+    },
+    {
+      "name": "SYN_M",
+      "type": "main",
+      "fraction": 55.0,
+      "nu": 6.4,
+      "keq": 0.12,
+      "sigma": 48.0,
+      "kkin": 1.0,
+      "fit": true
+    },
+    {
+      "name": "SYN_B1",
+      "type": "basic",
+      "fraction": 12.0,
+      "nu": 9.5,
+      "keq": 0.0006,
+      "sigma": 30.0,
+      "kkin": 8e-05,
+      "fit": true
+    },
+    {
+      "name": "SYN_B2",
+      "type": "basic",
+      "fraction": 9.0,
+      "nu": 9.8,
+      "keq": 0.0009,
+      "sigma": 33.0,
+      "kkin": 9e-05,
+      "fit": true
+    },
+    {
+      "name": "SYN_B3",
+      "type": "basic",
+      "fraction": 4.0,
+      "nu": 10.2,
+      "keq": 0.0009,
+      "sigma": 36.0,
+      "kkin": 3.5e-05,
+      "fit": true
+    }
+  ],
+  "buffer": {
+    "A_mol_L": 0.035,
+    "B_mol_L": 0.1
+  },
+  "experiments": [
+    {
+      "id": "syn_25gL_25CV_20_95",
+      "n_fractions": 21,
+      "peak_total_g_L": 3.138820004712479,
+      "file": "data/synthetic_twin/syn_25gL_25CV_20_95.csv"
+    },
+    {
+      "id": "syn_45gL_25CV_20_95",
+      "n_fractions": 21,
+      "peak_total_g_L": 4.452412782344967,
+      "file": "data/synthetic_twin/syn_45gL_25CV_20_95.csv"
+    },
+    {
+      "id": "syn_35gL_25CV_05_105",
+      "n_fractions": 21,
+      "peak_total_g_L": 4.652759017222617,
+      "file": "data/synthetic_twin/syn_35gL_25CV_05_105.csv"
+    }
+  ],
+  "observation_model": {
+    "n_fractions": 21,
+    "noise_cv": 0.05,
+    "noise_floor_g_L": 0.01,
+    "form": "y = max(0, c*(1+eps1) + eps2), eps1~N(0,cv^2), eps2~N(0,floor^2)"
+  },
+  "seed": 20260801,
+  "expected_fit": {
+    "rmse_at_truth": 0.144,
+    "noise_rms_on_scored_points": 0.08,
+    "why_they_differ": "observations are fraction MEANS while the likelihood compares to point values on the solver grid, exactly as for the real pooled fractions. A correct fit therefore lands near 0.144, not 0.080; a fit that reaches 0.080 is fitting the noise.",
+    "identifiability": "at truth, +10% on the main component's nu multiplies the RMSE by 9.8 and doubling its k_eq by 8.0, while +50% on a basic component's sigma multiplies it by 1.2 -- the weakly identified steric block the compression certificates are stated for is present in the twin."
+  },
+  "note": "components_truth is what a correct fit recovers; components_hlxsyn.yaml holds the same values, so start any fit from a perturbed initial point, not from the file."
+}
