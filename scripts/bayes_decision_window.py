@@ -33,8 +33,7 @@ from cex_model.bayes.decision_window import (
 from cex_model.bayes.loading_sweep import _load_product_setup
 
 # Blinded labels for the double-blind figures (mAb A-E), used with --blind.
-BLIND_LABELS = {"HLXSYN": "mAb A", "HLXSYN": "mAb B", "HLXSYN": "mAb B",
-                "HLXSYN": "mAb C", "HLXSYN": "mAb D", "HLXSYN": "mAb E"}
+BLIND_LABELS = {'HLXSYN': 'mAb A'}
 
 
 def _plot(product, owm, voi, path, *, loading_cap: float = DEFAULT_LOADING_CAP_G_PER_L, label=None) -> None:
@@ -243,7 +242,7 @@ def run_product_hier_scan(product, *, in_dir, out_dir, n_candidates, n_steps, n_
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--products", nargs="+", default=["HLXSYN", "HLXSYN", "HLXSYN"])
+    ap.add_argument("--products", nargs="+", default=['HLXSYN'])
     ap.add_argument("--in-dir", default="results/bayes")
     ap.add_argument("--out-dir", default="results/bayes")
     ap.add_argument("--n-candidates", type=int, default=24)

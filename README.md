@@ -25,7 +25,8 @@ at its known truth a 10% move in the main component's characteristic charge mult
 residual by 9.8, while a 50% move in a basic component's steric factor multiplies it by 1.2.
 
     pip install numpy scipy pyyaml pandas openpyxl        # torch additionally for the fitting stages
-    python scripts/make_synthetic_twin.py                 # regenerate the twin from its parameters
+    make smoke                                            # imports, twin loads, truth file parses
+    make synthetic                                        # regenerate the twin and fit it (needs torch)
     python -c "import sys; sys.path.insert(0,'src'); \
                from cex_model import app_support as A; print(A.load_product('HLXSYN').label)"
 
@@ -34,6 +35,14 @@ observation model, and the residual a correct fit lands at -- 0.144, against a n
 on the scored points. The two differ because the observations are fraction means while the
 likelihood compares to point values, exactly as for the real pooled fractions; a fit that reaches
 0.080 is fitting the noise.
+
+## What produced what
+
+`MANIFEST.csv` has one row per artifact shipped here, giving the stage, the reproduction tier, the
+article object it feeds, the producing script, **the flags that must be passed explicitly** (many
+defaults silently write a different file), the output path and a sha256 of the shipped bytes. The
+`Makefile` passes those flags for you -- `make help` lists the targets. Do not reconstruct commands
+by hand.
 
 ## Licence
 

@@ -32,6 +32,7 @@
   "license": "mit",
   "access_right": "open",
   "language": "eng",
+  "version": "v1.1.0",
   "keywords": [
     "Bayesian calibration",
     "computer model calibration",

@@ -24,7 +24,7 @@ plt.rcParams.update({"font.size": 8, "axes.titlesize": 8.5, "axes.labelsize": 8,
                      "figure.titlesize": 9})
 TEXT_IN = 5.0
 
-LABEL = {"HLXSYN": "mAb A", "HLXSYN": "mAb B", "HLXSYN": "mAb C"}
+LABEL = {'HLXSYN': 'mAb A'}
 P_HI, P_LO = 0.95, 0.05
 ARMS = [("conditional", "conditional (no discrepancy layer)", "tab:blue"),
         ("hier-est", "hier-est (deployed, estimated from 9 folds)", "tab:red"),
@@ -111,7 +111,7 @@ def fig_cal(src_iso: Path, src_aniso: Path, out: Path, product: str = "HLXSYN"):
 # The DEPLOYMENT domain is the intersection: deployment is only authorised where the product has runs AND
 # hold-out adequacy has been demonstrated, which fails above LOAD_CAP. Shading the raw run range instead would
 # paint mAb A's 35-45 g/L as deployable, which is exactly the region the hold-out check fails.
-RUN_RANGE = {"HLXSYN": (25.0, 45.0), "HLXSYN": (8.77, 26.31), "HLXSYN": (25.0, 40.0)}
+RUN_RANGE = {'HLXSYN': (25.0, 45.0)}
 LOAD_CAP = 35.0
 P_DEC = 0.95
 # Safe-experiment loading domain, from diffpeak.design.safe_bounds: the observed range widened by
@@ -136,7 +136,7 @@ def fig_window(res: Path, out: Path):
     # subset was run and the below-range candidate comes from the 2-op file. Both mAb C files are
     # needed, or the one candidate that clears the screening threshold appears without its counterpart.
     emp = {}
-    for prod in ("HLXSYN", "HLXSYN"):
+    for prod in ('HLXSYN',):
         f = res / f"empirical_convolution_window_{prod}_capB.json"
         if f.exists():
             emp[prod] = [(r["loading"], r["phat_meet"]) for r in json.loads(f.read_text())["rows"]]
@@ -146,7 +146,7 @@ def fig_window(res: Path, out: Path):
         for o in json.loads(f2.read_text())["ops"].values():
             if round(o["op"][0], 2) not in have:
                 emp.setdefault("HLXSYN", []).append((o["op"][0], o["p_meet_empirical"]))
-    for ax, prod in zip(axes, ["HLXSYN", "HLXSYN", "HLXSYN"]):
+    for ax, prod in zip(axes, ['HLXSYN']):
         d = json.loads((res / f"{prod}_decision_window_predictive_hier.json").read_text())
         rows = sorted(d["rows"], key=lambda r: r["loading"])
         lo, hi = RUN_RANGE[prod]

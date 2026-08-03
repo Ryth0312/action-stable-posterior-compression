@@ -14,7 +14,7 @@ import json
 import pathlib
 
 R = pathlib.Path(__file__).resolve().parents[1] / "results/bayes"
-LABEL = {"HLXSYN": r"\pA{}", "HLXSYN": r"\pB{}", "HLXSYN": r"\pC{}"}
+LABEL = {'HLXSYN': '\\pA{}'}
 ARMS = ["conditional", "hier-est", "oracle", "floor-0", "floor-0.5", "floor-1", "floor-1.5", "floor-2"]
 ARM_TEX = {"conditional": "conditional", "hier-est": "hier-est", "oracle": "oracle",
            "floor-0": "floor $\\kappa{=}0$", "floor-0.5": "floor $\\kappa{=}\\tfrac12$",
@@ -108,7 +108,7 @@ def table_r5b():
            r"$s$ & & law & KS purity & KS yield & KS joint & ECE & Brier & tail $n$@hit \\", r"\midrule"]
     blocks = [(0, "$\\tfrac12$"), (1, "$1$")]
     for idx, slab in blocks:
-        for i, prod in enumerate(["HLXSYN", "HLXSYN", "HLXSYN"]):
+        for i, prod in enumerate(['HLXSYN']):
             f = R / f"r5b_decision_sbc_{prod}_ou_frozen.json"
             rec = json.loads(f.read_text())[idx]
             for law in ("conditional", "predictive"):
@@ -137,7 +137,7 @@ def _r6_body(kind):
         out.append(r"\midrule")
         out.append(r"\multicolumn{" + ("5" if kind == "rank" else "6") +
                    r"}{@{}l}{\emph{" + slab + r"}} \\")
-        for prod in ["HLXSYN", "HLXSYN", "HLXSYN"]:
+        for prod in ['HLXSYN']:
             sel = {r["arm"]: r for r in rows if r["product"] == prod}
             for j, arm in enumerate(ARMS):
                 r = sel.get(arm)

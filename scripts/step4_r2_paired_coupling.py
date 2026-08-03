@@ -183,7 +183,7 @@ def analyze(product, in_dir, spec, n_draws, seed):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--products", nargs="+", default=["HLXSYN", "HLXSYN", "HLXSYN"])
+    ap.add_argument("--products", nargs="+", default=['HLXSYN'])
     ap.add_argument("--in-dir", default="results/bayes")
     ap.add_argument("--spec", type=float, nargs=2, default=[0.70, 0.50])
     ap.add_argument("--n-draws", type=int, default=4000)

@@ -876,6 +876,11 @@ def main():
                     help="truncated-Newton steps in the stiff subspace before the reparam (converges the "
                          "data-constrained directions L-BFGS leaves off-minimum; 0 disables).")
     ap.add_argument("--reparam-damping", type=float, default=0.7, help="damping for the stiff-subspace polish steps.")
+    ap.add_argument("--c-param-out", default=None,
+                    help="where to merge this product's C_param_corr. Default results/bayes/"
+                         "c_param_correlated.json, which is SHARED across products and read by the "
+                         "discrepancy layer -- point it elsewhere when fitting the synthetic twin so "
+                         "the committed file is not modified.")
     a = ap.parse_args()
     if a.selftest or not a.product:
         selftest()
@@ -891,7 +896,8 @@ def main():
     else:
         refit_correlated(a.product, decf, kernel=a.kernel, n_steps=a.n_steps, map_iters=a.map_iters,
                          optimizer=a.optimizer, rho_max=a.rho_max, reparam=a.reparam,
-                         reparam_polish=a.reparam_polish, reparam_damping=a.reparam_damping)
+                         reparam_polish=a.reparam_polish, reparam_damping=a.reparam_damping,
+                         cpath=a.c_param_out)
 
 
 if __name__ == "__main__":

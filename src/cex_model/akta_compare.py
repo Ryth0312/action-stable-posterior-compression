@@ -18,20 +18,7 @@ import numpy as np
 # the calibrated experiment (conditions + xlsx curve) in the product bundle. Loads are
 # the ACTUAL/measured values recorded in the configs. Excludes the HLXSYN 等度/isocratic
 # outlier; HLXSYN exp5 (DT) has no fitting-AKTA counterpart.
-AKTA_FITTING: dict[str, dict[str, tuple[float, float, float]]] = {
-    "HLXSYN": {
-        "20240131-HLXSYN-IEC-25G L-25CV-RT=8 001.csv": (25.0, 25.0, 20.0),
-        "20240201-HLXSYN-IEC-45G L-25CV 001.csv": (45.0, 25.0, 20.0),
-        "20240204-HLXSYN-IEC-35G L-5-85%B-20CV+5CV 001.csv": (35.0, 25.0, 5.0),
-    },
-    "HLXSYN": {
-        "HLXSYN 10 gL 10CV 001.csv": (8.77, 10.0, 40.0),
-        "HLXSYN CEX 10 gL 20 CV 003.csv": (8.77, 20.0, 40.0),
-        "HLXSYN  10gL 15 CV CEX 002.csv": (8.77, 15.0, 40.0),
-        "HLXSYN CEX 30 gL 15 CV 005.csv": (26.31, 15.0, 40.0),
-        "HLXSYN 20 gL 15 CV CEX 004.csv": (17.54, 15.0, 40.0),
-    },
-}
+AKTA_FITTING: dict[str, dict[str, tuple[float, float, float]]] = {'HLXSYN': {'20240131-HLXSYN-IEC-25G L-25CV-RT=8 001.csv': (25.0, 25.0, 20.0), '20240201-HLXSYN-IEC-45G L-25CV 001.csv': (45.0, 25.0, 20.0), '20240204-HLXSYN-IEC-35G L-5-85%B-20CV+5CV 001.csv': (35.0, 25.0, 5.0)}}
 
 
 def simulate_total(column, components, e, correction) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

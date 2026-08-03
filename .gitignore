@@ -1,0 +1,14 @@
+# Python bytecode. Importing the package writes these; they must not be committed.
+__pycache__/
+*.py[cod]
+
+# Synthetic-twin fit outputs. `make synthetic` and `make synthetic-quick` write these and
+# `make clean-twin` removes them. Only the twin's inputs and its ground truth are archived.
+results/bayes/HLXSYN_*
+
+# Local build and environment noise
+.venv/
+build/
+dist/
+.ipynb_checkpoints/
+.DS_Store

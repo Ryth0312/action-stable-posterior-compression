@@ -36,9 +36,7 @@ import pandas as pd
 from scipy.ndimage import median_filter
 
 # Extinction coefficients (mL/mg/cm) from data/AKTA data/消光系数.txt.
-EXTINCTION_ML_MG_CM: dict[str, float] = {
-    "HLXSYN": 1.4, "HLXSYN": 1.4, "HLXSYN": 1.7, "HLXSYN": 1.43,
-}
+EXTINCTION_ML_MG_CM: dict[str, float] = {'HLXSYN': 1.4}
 # Flow-cell path length (cm) from data/AKTA data/单抗UV吸光值计算.docx.
 PATH_LENGTH_CM: float = 0.042
 

@@ -61,7 +61,7 @@ class DecisionGainConfig:
     out_path: str = "results/bayes/decision_gain_certificate.json"
     # this repo's DT-excluded HLXSYN cohort is committed as "HLXSYN", not "HLXSYN"
     # (see results/bayes/kappa_closure_discovery.json "notes"); "HLXSYN" alone has no spectral.json.
-    strict_main_products: tuple[str, ...] = field(default_factory=lambda: ("HLXSYN", "HLXSYN", "HLXSYN"))
+    strict_main_products: tuple[str, ...] = field(default_factory=lambda: ('HLXSYN',))
 
 
 def _git_commit() -> str:

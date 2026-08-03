@@ -27,8 +27,8 @@ from cex_model.bayes.compare import _md_table
 
 __all__ = ["build_evidence", "render_markdown", "run_evidence_table", "FORBIDDEN_PHRASES"]
 
-TIER_A = ["HLXSYN", "HLXSYN", "HLXSYN"]
-TIER_B = ["HLXSYN", "HLXSYN"]
+TIER_A = ['HLXSYN']
+TIER_B = ['HLXSYN']
 
 # Positive claims that must never appear (disclaimers like "we do NOT claim a full-state kappa_S bound"
 # are fine -- the guard matches these exact positive phrasings only).

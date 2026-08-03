@@ -32,7 +32,7 @@ _dc = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_dc)
 
 IN_DIR = Path("results/bayes")
-PRODUCTS = ["HLXSYN", "HLXSYN", "HLXSYN"]
+PRODUCTS = ['HLXSYN']
 SIGMA_OBS = 0.02       # matches the project measurement-noise convention (decision_oed_score sigma)
 N_PROTEIN = 5          # 20 params = 5 proteins x 4 blocks; sigma block = indices [3n:4n]
 

@@ -303,7 +303,7 @@ def _analyze(laws, tol, spec, w):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--products", nargs="+", default=["HLXSYN", "HLXSYN", "HLXSYN"])
+    ap.add_argument("--products", nargs="+", default=['HLXSYN'])
     ap.add_argument("--in-dir", default="results/bayes")
     ap.add_argument("--n-candidates", type=int, default=24)
     ap.add_argument("--n-steps", type=int, default=300)

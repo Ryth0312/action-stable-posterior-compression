@@ -1,0 +1,7 @@
+stage,tier,paper_object,script,flags,output,sha256,note
+S0,T1,synthetic twin (no article number),scripts/make_synthetic_twin.py,no arguments,"configs/*_hlxsyn.yaml, data/synthetic_twin/*.csv, results/bayes/synthetic_twin_truth.json",,run by `make synthetic`
+S1,T1,synthetic twin (no article number),scripts/bayes_calibrate.py,--product HLXSYN --n-steps 300 --init config --map-iters 150 --engine laplace --predict --predict-samples 100 --out-dir results/bayes,"results/bayes/HLXSYN_posterior.npz, HLXSYN_summary.json",,run by `make synthetic`
+S2,T1,synthetic twin (no article number),scripts/bayes_decision.py,--product HLXSYN --n-steps 300 --map-iters 150 --mc-samples 200,results/bayes/HLXSYN_decision.json,,run by `make synthetic`
+S3,T1,synthetic twin (no article number),scripts/bayes_loeo.py,--product HLXSYN --n-steps 300 --loeo --decision,results/bayes/HLXSYN_validation.json,,run by `make synthetic`
+S4,T1,synthetic twin (no article number),scripts/bayes_correlated_refit.py,--product HLXSYN --kernel ou --n-steps 300 --map-iters 120 --optimizer lbfgs --rho-max 0.9,"results/bayes/HLXSYN_correlated.json, HLXSYN_correlated_posterior.npz",,run by `make synthetic`
+S10,T1,synthetic twin (no article number),scripts/bayes_decision_window.py,--products HLXSYN --n-steps 300 --n-samples 200 --n-candidates 24 --seed 0 --gate posterior_action,results/bayes/HLXSYN_decision_window.json,,run by `make synthetic`

@@ -17,7 +17,7 @@ from cex_model.bayes.solver_agnostic import certify_solver_agnostic
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--products", nargs="*", default=["HLXSYN", "HLXSYN", "HLXSYN", "HLXSYN"])
+    ap.add_argument("--products", nargs="*", default=['HLXSYN'])
     ap.add_argument("--in-dir", default="results/bayes")
     ap.add_argument("--out-dir", default="results/bayes")
     ap.add_argument("--fd-rel", type=float, default=1e-2)

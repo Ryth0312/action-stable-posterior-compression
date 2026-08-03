@@ -20,8 +20,7 @@ __all__ = ["plot_posterior_predictive", "plot_identifiability", "plot_design", "
 # original output; filenames are unaffected).
 import os  # noqa: E402
 
-_ANON = {"HLXSYN": "mAb E", "HLXSYN": "mAb D",
-         "HLXSYN": "mAb A", "HLXSYN": "mAb B", "HLXSYN": "mAb C"}
+_ANON = {'HLXSYN': 'mAb E'}
 
 
 def _blind(s: str) -> str:

@@ -25,7 +25,7 @@ believed to be complete is not a control; a build that refuses to finish is.
   python scripts/make_supplement_b_archive.py --target referee --out /tmp/referee
 """
 from __future__ import annotations
-import argparse, ast, gzip, hashlib, json, re, shutil, sys, tarfile, zipfile
+import argparse, ast, gzip, hashlib, json, re, shutil, subprocess, sys, tarfile, zipfile
 from pathlib import Path
 
 import numpy as np
@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Identifiers that must not appear in the public archive. Longest first: a shorter code is a
 # prefix of a longer one and a naive order would leave "HLXSYN" behind inside "HLXSYN".
-CODES = ["HLXSYN", "HLXSYN", "HLXSYN", "HLXSYN", "HLXSYN", "HLXSYN", "HLXSYN", "HLXSYN", "HLXSYN"]
+CODES = ['HLXSYN']
 CODE_RE = re.compile("|".join(CODES) + "|" + "|".join(c.lower() for c in CODES))
 
 # The bare family prefix, which the codes above do not cover. It survives in identifiers such as
@@ -50,8 +50,30 @@ TWIN = "HLXSYN"
 # inverse subpackages anyway, so a subset is fragile without being smaller in any way that
 # matters (1.7 MB). The scripts and the result artifacts are where curation earns its keep.
 SRC_KEEP = ["cex_model"]
+
+# Third-party dependencies the archive is allowed to import. Anything outside this list, the
+# standard library and the staged tree is a module we failed to ship. Keeping it explicit means
+# the list is also the archive's dependency manifest, and a new dependency cannot appear silently.
+THIRD_PARTY = {
+    "numpy", "scipy", "pandas", "matplotlib", "yaml", "openpyxl", "torch", "pyro", "requests",
+    "tqdm", "sklearn", "statsmodels", "seaborn", "pytest",
+}
 # The scripts that write an artifact the article reports, plus the twin and the figures/tables.
 SCRIPTS_KEEP = [
+    "make_reproduction_manifest.py",
+    "_calibration_metrics.py",      # path-loaded by step5 and step6
+    "bayes_nuts_real.py",           # imported by bayes_correlated_nuts.py
+    "bayes_decision_discrepancy_hier_audit.py",   # named by MANIFEST.csv stage S9
+
+    "bayes_decision_discrepancy.py",
+    "bayes_decision_gain.py",
+    "bayes_discrepancy_prior_fold_audit.py",
+    "bayes_predictive_closure.py",
+    "bayes_restricted_fisher_certificate.py",
+    "bayes_restricted_sigma_gain.py",
+    "bayes_sigma_direction_audit.py",
+    "bayes_timing.py",
+    "step4b_r2_reverdict.py",
     "bayes_calibrate.py", "bayes_cmc_class.py", "bayes_correlated_nuts.py",
     "bayes_correlated_refit.py", "bayes_decision.py", "bayes_decision_discrepancy_hier.py",
     "bayes_decision_window.py", "bayes_empirical_convolution.py", "bayes_fisher_ablation.py",
@@ -113,7 +135,8 @@ at its known truth a 10% move in the main component's characteristic charge mult
 residual by 9.8, while a 50% move in a basic component's steric factor multiplies it by 1.2.
 
     pip install numpy scipy pyyaml pandas openpyxl        # torch additionally for the fitting stages
-    python scripts/make_synthetic_twin.py                 # regenerate the twin from its parameters
+    make smoke                                            # imports, twin loads, truth file parses
+    make synthetic                                        # regenerate the twin and fit it (needs torch)
     python -c "import sys; sys.path.insert(0,'src'); \\
                from cex_model import app_support as A; print(A.load_product('HLXSYN').label)"
 
@@ -123,9 +146,34 @@ on the scored points. The two differ because the observations are fraction means
 likelihood compares to point values, exactly as for the real pooled fractions; a fit that reaches
 0.080 is fitting the noise.
 
+## What produced what
+
+`MANIFEST.csv` has one row per artifact shipped here, giving the stage, the reproduction tier, the
+article object it feeds, the producing script, **the flags that must be passed explicitly** (many
+defaults silently write a different file), the output path and a sha256 of the shipped bytes. The
+`Makefile` passes those flags for you -- `make help` lists the targets. Do not reconstruct commands
+by hand.
+
 ## Licence
 
 MIT, see `LICENSE`.
+"""
+
+GITIGNORE = """\
+# Python bytecode. Importing the package writes these; they must not be committed.
+__pycache__/
+*.py[cod]
+
+# Synthetic-twin fit outputs. `make synthetic` and `make synthetic-quick` write these and
+# `make clean-twin` removes them. Only the twin's inputs and its ground truth are archived.
+results/bayes/HLXSYN_*
+
+# Local build and environment noise
+.venv/
+build/
+dist/
+.ipynb_checkpoints/
+.DS_Store
 """
 
 
@@ -162,6 +210,7 @@ ZENODO = {
     "license": "mit",
     "access_right": "open",
     "language": "eng",
+    "version": "v1.1.0",
     "keywords": [
         "Bayesian calibration", "computer model calibration", "practical nonidentifiability",
         "decision-theoretic model reduction", "posterior compression",
@@ -203,7 +252,9 @@ def stage_public(out: Path) -> list[str]:
     _copy(ROOT / "data" / "synthetic_twin", out / "data" / "synthetic_twin")
     _copy(ROOT / "results" / "bayes" / "synthetic_twin_truth.json",
           out / "results" / "bayes" / "synthetic_twin_truth.json")
+    _copy(ROOT / "Makefile", out / "Makefile")
     (out / "LICENSE").write_text(MIT, encoding="utf-8")
+    (out / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
     (out / "README.md").write_text(README, encoding="utf-8")
     (out / ".zenodo.json").write_text(json.dumps(ZENODO, indent=2, ensure_ascii=False) + "\n",
                                       encoding="utf-8")
@@ -372,6 +423,9 @@ def deidentify(tree: Path) -> list[str]:
             p.write_text(new, encoding="utf-8")
     notes.append(f"renamed {n_bare} bare family-prefix tokens")
 
+    n_col = _dedupe_collapsed(tree)
+    notes.append(f"de-duplicated {n_col} literals the rename collapsed")
+
     bad = []                                   # a transform that breaks the source must not ship
     for p in sorted(tree.rglob("*.py")):
         try:
@@ -382,6 +436,141 @@ def deidentify(tree: Path) -> list[str]:
         raise SystemExit("de-identification broke the source:\n  " + "\n  ".join(bad))
     notes.append(f"parsed {len(list(tree.rglob('*.py')))} staged python files, all clean")
     return notes
+
+
+def write_manifest(out: Path, target: str) -> list[str]:
+    """MANIFEST.csv, generated from the STAGED tree so its checksums are of the shipped bytes."""
+    gen = ROOT / "scripts" / "make_reproduction_manifest.py"
+    cmd = [sys.executable, str(gen), "--target", target, "--out", str(out / "MANIFEST.csv")]
+    if target == "referee":
+        cmd += ["--results", str(out / "results" / "bayes")]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(r.stdout + r.stderr)
+        sys.exit(f"manifest generation failed (exit {r.returncode})")
+    return [r.stdout.strip()]
+
+
+
+def _literal_spans(text):
+    """Offending literals as ``(start, end, replacement)``, outermost first.
+
+    The bare-prefix rename maps several product codes onto one, so any literal that keyed or
+    listed products becomes a dict with duplicate keys (Python silently keeps the last) or a
+    sequence of identical strings. Both are legal Python, so the syntax gate cannot see them.
+    Only the twin ships, so one entry is the correct content.
+    """
+    tree = ast.parse(text)
+    off, acc = [0], 0
+    for line in text.splitlines(keepends=True):
+        acc += len(line)
+        off.append(acc)
+    def span(n):
+        return off[n.lineno - 1] + n.col_offset, off[n.end_lineno - 1] + n.end_col_offset
+
+    edits = []
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Dict) and len(n.keys) >= 2:
+            if any(k is None or not isinstance(k, ast.Constant) for k in n.keys):
+                continue
+            seen, keep = set(), []
+            for k, v in zip(n.keys, n.values):
+                if k.value in seen:
+                    continue
+                seen.add(k.value)
+                keep.append((k, v))
+            if len(keep) < len(n.keys):
+                body = ", ".join(f"{ast.unparse(k)}: {ast.unparse(v)}" for k, v in keep)
+                edits.append((*span(n), "{" + body + "}"))
+        elif isinstance(n, (ast.List, ast.Tuple)) and len(n.elts) >= 2:
+            vals = [e.value for e in n.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+            if len(vals) == len(n.elts) and len(set(vals)) == 1:
+                one = ast.unparse(n.elts[0])
+                edits.append((*span(n), f"[{one}]" if isinstance(n, ast.List) else f"({one},)"))
+
+    # Drop anything nested inside another edit; the outer rewrite subsumes it.
+    edits.sort(key=lambda e: (e[0], -e[1]))
+    out = []
+    for e in edits:
+        if out and e[0] >= out[-1][0] and e[1] <= out[-1][1]:
+            continue
+        out.append(e)
+    return out
+
+
+def _dedupe_collapsed(tree: Path) -> int:
+    n = 0
+    for p in sorted(tree.rglob("*.py")):
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        for _ in range(8):                      # a rewrite can expose an enclosing literal
+            edits = _literal_spans(text)
+            if not edits:
+                break
+            for a, b, r in sorted(edits, reverse=True):
+                text = text[:a] + r + text[b:]
+            n += len(edits)
+        p.write_text(text, encoding="utf-8")
+    return n
+
+
+
+def check_imports(tree: Path) -> list[str]:
+    """Every first-party module a staged script needs must be staged too.
+
+    ``ast.parse`` proves a file is syntactically valid, which is orthogonal: a script importing a
+    sibling that was never added to SCRIPTS_KEEP parses perfectly and fails at run time. Two ways
+    a dependency hides -- a normal import, and a path load through
+    ``spec_from_file_location(..., parent / "x.py")`` -- so both are checked. Third-party and
+    standard-library names are resolved against the building environment and are the referee's
+    problem, not the archive's.
+    """
+    import importlib.util
+    scripts = {p.stem for p in (tree / "scripts").glob("*.py")}
+    src = tree / "src"
+    missing = []
+    for p in sorted(tree.rglob("*.py")):
+        rel = p.relative_to(tree)
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        for n in ast.walk(ast.parse(text)):
+            names = []
+            if isinstance(n, ast.Import):
+                names = [a.name.split(".")[0] for a in n.names]
+            elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module:
+                names = [n.module.split(".")[0]]
+            for name in names:
+                if name in sys.stdlib_module_names or name in scripts or name in THIRD_PARTY:
+                    continue
+                if (src / name).is_dir() or (src / f"{name}.py").is_file():
+                    continue
+                try:
+                    if importlib.util.find_spec(name) is not None:
+                        continue
+                except (ImportError, ValueError):
+                    pass
+                missing.append(f"{rel}:{n.lineno}: imports '{name}', which is not in the archive")
+        # A path load hides in a plain string. Read them off the AST so that prose in a docstring
+        # or a comment cannot trip the gate.
+        staged = {q.name for q in tree.rglob("*.py")}
+        for n in ast.walk(ast.parse(text)):
+            if not (isinstance(n, ast.Constant) and isinstance(n.value, str)):
+                continue
+            v = n.value
+            if (v.endswith(".py") and len(v) > 3 and "*" not in v and "/" not in v
+                    and " " not in v and v not in staged):
+                missing.append(f"{rel}:{n.lineno}: names '{v}', which is not in the archive")
+    return missing
+
+
+def check_collapsed(tree: Path) -> list[str]:
+    """No literal may survive with duplicate keys or an all-identical element run."""
+    hits = []
+    for p in sorted(tree.rglob("*.py")):
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        for a, _b, _r in _literal_spans(text):
+            line = text.count("\n", 0, a) + 1
+            hits.append(f"{p.relative_to(tree)}:{line}: literal collapsed by the rename")
+    return hits
 
 
 def _write_zip(path: Path, out: Path, files: list[Path]):
@@ -452,6 +641,16 @@ def main():
 
     out = Path(a.out) if a.out else ROOT / "build" / f"supplement_b_{a.target}"
     if out.exists():
+        # The staging directory is wiped on every build. If someone has made it the working tree of
+        # a clone -- the public archive is also a git repository -- that would delete the clone.
+        if (out / ".git").exists():
+            sys.exit(f"refusing to build into {out}: it is a git working tree, and this build "
+                     f"would delete it.\n"
+                     f"Build somewhere else with --out, then sync into the clone, e.g.\n"
+                     f"  python scripts/make_supplement_b_archive.py --target {a.target} "
+                     f"--out /tmp/archive\n"
+                     f"  rsync -a --delete --exclude .git --exclude __pycache__ "
+                     f"/tmp/archive/ {out}/")
         shutil.rmtree(out)
     out.mkdir(parents=True)
 
@@ -461,12 +660,24 @@ def main():
     notes = stage_public(out) if a.target == "public" else stage_referee(out)
     if a.target == "public":
         notes += deidentify(out)
+    notes += write_manifest(out, a.target)
     for n in notes:
         print(f"  {n}")
 
     files = [p for p in out.rglob("*") if p.is_file()]
     size = sum(p.stat().st_size for p in files)
     print(f"  staged {len(files)} files, {size/1e6:.1f} MB")
+
+    for label, fn in (("import", check_imports), ("collapsed-literal", check_collapsed)):
+        problems = fn(out)
+        if problems:
+            print(f"\n  {label.upper()} GATE FAILED: {len(problems)} problem(s)")
+            for q in problems[:30]:
+                print(f"    {q}")
+            if len(problems) > 30:
+                print(f"    ... and {len(problems)-30} more")
+            sys.exit(1)
+        print(f"  {label} gate passed")
 
     guard = a.target == "public" or not a.allow_codes
     if guard:

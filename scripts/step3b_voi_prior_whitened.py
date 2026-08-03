@@ -29,7 +29,7 @@ import pathlib
 import numpy as np
 
 RES = pathlib.Path(__file__).resolve().parents[1] / "results/bayes"
-PRODUCTS = ["HLXSYN", "HLXSYN", "HLXSYN"]
+PRODUCTS = ['HLXSYN']
 N_PROTEIN = 5
 _BOUNDS = {"keq": (1e-7, 1e-1), "kkin": (1e-11, 1e-3), "nu": (1.0, 18.0), "sigma": (1.0, 100.0)}
 _ROWS, _LOG = ("keq", "kkin", "nu", "sigma"), {"keq", "kkin"}
