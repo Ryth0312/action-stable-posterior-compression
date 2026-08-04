@@ -110,7 +110,8 @@ OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWA
 
 README = """# Supplement B: code and reproduction archive
 
-Companion to *Action-stable posterior compression for mechanistic calibration*.
+Companion to *Action-stable posterior compression under practical nonidentifiability, with an
+application to chromatography process design*.
 
 ## What is here, and what is not
 
@@ -148,9 +149,10 @@ likelihood compares to point values, exactly as for the real pooled fractions; a
 
 ## What produced what
 
-`MANIFEST.csv` has one row per artifact shipped here, giving the stage, the reproduction tier, the
-article object it feeds, the producing script, **the flags that must be passed explicitly** (many
-defaults silently write a different file), the output path and a sha256 of the shipped bytes. The
+`MANIFEST.csv` lists the twin pipeline: for each stage, the reproduction tier, the producing script,
+**the flags that must be passed explicitly** (many defaults silently write a different file) and the
+outputs that stage produces. It carries no checksums, because no product artifact ships here; the
+confidential bundle's manifest binds each shipped artifact to an article object and hashes it. The
 `Makefile` passes those flags for you -- `make help` lists the targets. Do not reconstruct commands
 by hand.
 
@@ -187,7 +189,7 @@ ZENODO = {
         "steric-mass-action model, the differentiable solver, the Bayesian calibration and "
         "decision pipeline, and a <b>synthetic twin</b> the whole pipeline runs on end to end "
         "on CPU.</p>"
-        "<p>The three antibody products analysed in the article are <b>not</b> included. Their "
+        "<p>The five antibody products behind the article and its supplements---three applications and two stress tests---are <b>not</b> included. Their "
         "elution and chromatographic purity traces are proprietary, and so are their identities, "
         "so they are absent from this archive rather than anonymised within it: no file name, no "
         "result file and no array key names a real product. Artifacts derived from those traces "
@@ -210,7 +212,8 @@ ZENODO = {
     "license": "mit",
     "access_right": "open",
     "language": "eng",
-    "version": "v1.1.0",
+    # No "version" key on purpose. Zenodo takes the version from the GitHub release tag; a
+    # literal here would override the tag and silently ship a stale version on the next release.
     "keywords": [
         "Bayesian calibration", "computer model calibration", "practical nonidentifiability",
         "decision-theoretic model reduction", "posterior compression",
@@ -252,7 +255,13 @@ def stage_public(out: Path) -> list[str]:
     _copy(ROOT / "data" / "synthetic_twin", out / "data" / "synthetic_twin")
     _copy(ROOT / "results" / "bayes" / "synthetic_twin_truth.json",
           out / "results" / "bayes" / "synthetic_twin_truth.json")
-    _copy(ROOT / "Makefile", out / "Makefile")
+    # The root Makefile is the referee tree's. The public archive has no product artifacts, so its
+    # manifest target must generate the public manifest; --target referee would fail the coverage
+    # check and leave MANIFEST.csv untouched.
+    mk = (ROOT / "Makefile").read_text(encoding="utf-8").replace(
+        "make_reproduction_manifest.py --target referee",
+        "make_reproduction_manifest.py --target public")
+    (out / "Makefile").write_text(mk, encoding="utf-8")
     (out / "LICENSE").write_text(MIT, encoding="utf-8")
     (out / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
     (out / "README.md").write_text(README, encoding="utf-8")

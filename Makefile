@@ -26,8 +26,8 @@ smoke:
 	              print('twin truth: rmse_at_truth', d['expected_fit']['rmse_at_truth'])"
 	@echo "smoke OK"
 
-# The full-resolution run: the same n-steps and iteration budget the article's fits use. Hours of
-# CPU. Use synthetic-quick first to check the chain end to end in minutes.
+# The full-resolution run: the article's solver resolution and MAP iteration budget. Hours of CPU.
+# Use synthetic-quick first to check the chain end to end in minutes.
 synthetic: NSTEPS = 300
 synthetic: MAPITERS = 150
 synthetic: synthetic-run
@@ -81,7 +81,7 @@ regen-calibration:
 	    --gibbs-iter 3000 --gibbs-burn 600 --gibbs-thin 6 --seed 0
 
 manifest:
-	$(PYTHON) scripts/make_reproduction_manifest.py --target referee \
+	$(PYTHON) scripts/make_reproduction_manifest.py --target public \
 	    --results results/bayes --out MANIFEST.csv
 
 # The twin's refit is pointed at its own c_param file so the shared, committed

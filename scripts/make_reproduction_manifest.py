@@ -194,8 +194,10 @@ TWIN_STAGES: list[tuple[str, str, str, str, str]] = [
      "--product HLXSYN --n-steps 300 --loeo --decision",
      "results/bayes/HLXSYN_validation.json"),
     ("S4", "T1", "bayes_correlated_refit.py",
-     "--product HLXSYN --kernel ou --n-steps 300 --map-iters 120 --optimizer lbfgs --rho-max 0.9",
-     "results/bayes/HLXSYN_correlated.json, HLXSYN_correlated_posterior.npz"),
+     "--product HLXSYN --kernel ou --n-steps 300 --map-iters 150 --optimizer lbfgs --rho-max 0.9 "
+     "--c-param-out results/bayes/HLXSYN_c_param_correlated.json  (without the last flag a twin "
+     "refit would merge into the shared c_param_correlated.json)",
+     "results/bayes/HLXSYN_correlated.json, HLXSYN_correlated_posterior.npz, HLXSYN_c_param_correlated.json"),
     ("S10", "T1", "bayes_decision_window.py",
      "--products HLXSYN --n-steps 300 --n-samples 200 --n-candidates 24 --seed 0 "
      "--gate posterior_action",

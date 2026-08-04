@@ -1,6 +1,7 @@
 # Supplement B: code and reproduction archive
 
-Companion to *Action-stable posterior compression for mechanistic calibration*.
+Companion to *Action-stable posterior compression under practical nonidentifiability, with an
+application to chromatography process design*.
 
 ## What is here, and what is not
 
@@ -38,9 +39,10 @@ likelihood compares to point values, exactly as for the real pooled fractions; a
 
 ## What produced what
 
-`MANIFEST.csv` has one row per artifact shipped here, giving the stage, the reproduction tier, the
-article object it feeds, the producing script, **the flags that must be passed explicitly** (many
-defaults silently write a different file), the output path and a sha256 of the shipped bytes. The
+`MANIFEST.csv` lists the twin pipeline: for each stage, the reproduction tier, the producing script,
+**the flags that must be passed explicitly** (many defaults silently write a different file) and the
+outputs that stage produces. It carries no checksums, because no product artifact ships here; the
+confidential bundle's manifest binds each shipped artifact to an article object and hashes it. The
 `Makefile` passes those flags for you -- `make help` lists the targets. Do not reconstruct commands
 by hand.
 
