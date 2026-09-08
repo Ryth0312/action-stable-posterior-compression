@@ -89,10 +89,17 @@ def main() -> None:
     ap.add_argument("--out-dir", default="results/bayes")
     args = ap.parse_args()
 
-    b = A.load_product(args.product)
-    if args.exclude:
+    # Accept the pseudo-product ids the rest of the pipeline uses. Every other stage resolves
+    # HLXSYN through _PRODUCT_MAP; this script did not, so the id it writes its artifact under
+    # was one it could not be invoked with, and the manifest's own command for that artifact could
+    # never have produced it.
+    from cex_model.bayes.loading_sweep import _PRODUCT_MAP
+    real, auto_drop = _PRODUCT_MAP.get(args.product, (args.product, []))
+    b = A.load_product(real)
+    exclude = list(args.exclude) + [d for d in auto_drop if d not in args.exclude]
+    if exclude:
         from cex_model.bayes.compare import filter_experiments
-        kept, dropped = filter_experiments(b.experiments, args.exclude)
+        kept, dropped = filter_experiments(b.experiments, exclude)
         if dropped:
             print(f"excluded {len(dropped)} experiment(s): {[e.name for e in dropped]}")
             b.experiments = kept

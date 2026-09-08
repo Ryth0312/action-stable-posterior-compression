@@ -19,10 +19,15 @@ unchanged: only the parameter-space metric moves.
 Torch-free: the prior is Gaussian in u with std = (hi - lo)/4 per row (log10 for the rate rows), mirrored here
 from cex_model.bayes.prior so this stays a post-processing step.
 
-Run:  python scripts/step3b_voi_prior_whitened.py
+``--posterior correlated_posterior`` takes the whole computation at the deployed capped
+correlated-residual refit instead of the independent-residual fit, reading its decision Jacobian out of the
+cached ``inflation_jacobians_{product}.npz`` so this stays post-processing with no solver call.
+
+Run:  python scripts/step3b_voi_prior_whitened.py [--posterior correlated_posterior]
 """
 from __future__ import annotations
 
+import argparse
 import json
 import pathlib
 
@@ -75,12 +80,23 @@ def voi_per_qoi(Sigma, G, w, B):
     return [float(w[q] * (G[q] @ A0 @ G[q] - G[q] @ A1 @ G[q])) for q in range(G.shape[0])]
 
 
-def analyse(product: str) -> dict:
-    z = np.load(RES / f"{product}_posterior.npz", allow_pickle=False)
+def analyse(product: str, posterior: str = "posterior") -> dict:
+    z = np.load(RES / f"{product}_{posterior}.npz", allow_pickle=False)
     Sigma = np.asarray(z["cov"], float)
     dj = json.loads((RES / f"{product}_decision.json").read_text())
-    G = np.atleast_2d(np.asarray(dj["decision_jacobian"], float))
     tol = np.asarray(dj["tol"], float)
+    if posterior == "posterior":
+        G = np.atleast_2d(np.asarray(dj["decision_jacobian"], float))
+    else:
+        # the Jacobian at the correlated reference point, from the cache the deployed reads share.
+        # bayes_covariance_inflation_sensitivity.py --stage jacobians appends the historical op last.
+        jz = np.load(RES / f"inflation_jacobians_{product}.npz")
+        ops = np.asarray(jz["ops"], float)
+        hist = np.asarray(dj["decision_op"], float)
+        if not np.allclose(ops[-1], hist):
+            raise SystemExit(f"{product}: the Jacobian cache's last row is {ops[-1].tolist()}, not the "
+                             f"historical condition {hist.tolist()}; regenerate the cache")
+        G = np.atleast_2d(np.asarray(jz["G"][-1], float))
     dim = Sigma.shape[0]
     n = dim // 4
     s0 = prior_std(n)
@@ -114,7 +130,14 @@ def analyse(product: str) -> dict:
 
 
 def main() -> None:
-    rows = [analyse(p) for p in PRODUCTS]
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--posterior", default="posterior",
+                    help="posterior tag: 'posterior' (independent-residual) or 'correlated_posterior' "
+                         "(the deployed capped refit; also sets the output filename tag)")
+    args = ap.parse_args()
+    rows = [analyse(p, args.posterior) for p in PRODUCTS]
+    for r in rows:
+        r["posterior"] = args.posterior
     raw = {r["product"]: r for r in json.loads((RES / "voi_nullity.json").read_text())}
     hdr = f"{'candidate':14} {'k':>2} | " + " | ".join(f"{p:>21}" for p in PRODUCTS)
     print("VoI tr{W(C-C_c)} in PRIOR-WHITENED coordinates (raw-metric value in brackets)")
@@ -133,8 +156,10 @@ def main() -> None:
     for c in ["sigma_cmn", "d_optimal", "sigma_diff", "dec"]:
         sh = [100 * r["cand"][c]["voi_trace"] / r["theta_only_ceiling_trWC"] for r in rows]
         print(f"  {c:14} " + " ".join(f"{x:8.3f}%" for x in sh))
-    (RES / "voi_nullity_prior_whitened.json").write_text(json.dumps(rows, indent=2))
-    print(f"\nwrote {RES / 'voi_nullity_prior_whitened.json'}")
+    tag = "" if args.posterior == "posterior" else "_corr"
+    out = RES / f"voi_nullity_prior_whitened{tag}.json"
+    out.write_text(json.dumps(rows, indent=2))
+    print(f"\nwrote {out}")
 
 
 if __name__ == "__main__":

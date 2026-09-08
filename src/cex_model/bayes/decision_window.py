@@ -288,12 +288,12 @@ def hier_predictive_window_map(posterior, bundle, ops, *, bias_draws, sd_draws, 
             "p_action_decisive": float(np.mean(cand_pd >= decisive)),
             "p_move_given_D": float(move),
             "mean_g": pick["mean_g"], "note": "FIXED candidate re-scored (not per-draw argmax oracle)"}
-        result["action"] = ("move-operating-point" if move >= 0.5 else
+        result["scan_flag"] = ("move-operating-point" if move >= 0.5 else
                             ("operate-as-is" if result["historical"]["p_action_decisive"] >= 0.5 else
                              "prospective-or-abstain"))
     else:
         result["recommended_candidate"] = None
-        result["action"] = "redesign-pool" if result["historical"]["p_meet"] < 0.5 else "abstain"
+        result["scan_flag"] = "redesign-pool" if result["historical"]["p_meet"] < 0.5 else "abstain"
     return result
 
 

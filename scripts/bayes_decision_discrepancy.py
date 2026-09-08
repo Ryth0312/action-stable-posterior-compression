@@ -29,7 +29,7 @@ import numpy as np
 from scipy.stats import multivariate_normal, norm
 
 RES = os.path.join(os.path.dirname(__file__), "..", "results", "bayes")
-SPEC = np.array([0.70, 0.50])       # illustrative purity/yield spec
+SPEC = np.array([0.70, 0.50])       # the shared release specification, purity/yield
 TOL = np.array([0.02, 0.05])        # nominal tolerances
 LOAD_CAP = 35.0                     # supported-domain loading cap (g/L)
 # Observed-QoI (HPLC/integration) measurement std -- PLACEHOLDER; set from the data

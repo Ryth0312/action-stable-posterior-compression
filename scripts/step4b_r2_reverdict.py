@@ -28,15 +28,20 @@ from scipy.stats import multivariate_normal as _mvn
 
 P_HI, P_LO = 0.95, 0.05
 _RAW = ("P_X_meet_nonlinear", "P_Y_meet_linear", "certified_bound", "t_star")
-# prior physical support, mirrored from cex_model.bayes.prior so this stays torch-free
-_BOUNDS = {"keq": (1e-7, 1e-1), "kkin": (1e-11, 1e-3), "nu": (1.0, 18.0), "sigma": (1.0, 100.0)}
+# The two supports, mirrored from cex_model.bayes.prior so this stays torch-free. The prior span is
+# what the superseded certificate clipped to; the solver guard is the interval the model is defined on.
+# They must match whatever step4 used, or the tube term and the paired tail come from different laws
+# and the certified bound sums two incommensurable pieces.
+_PRIOR_SPAN = {"keq": (1e-7, 1e-1), "kkin": (1e-11, 1e-3), "nu": (1.0, 18.0), "sigma": (1.0, 100.0)}
+_SOLVER_GUARD = {"keq": (1e-30, 1e10), "kkin": (1e-30, 1e10), "nu": (1.0, 50.0), "sigma": (0.0, 500.0)}
+_BOUNDS = _SOLVER_GUARD
 _ROWS, _LOG = ("keq", "kkin", "nu", "sigma"), {"keq", "kkin"}
 
 
-def _u_bounds(n):
+def _u_bounds(n, bounds=None):
     lo, hi = [], []
     for r in _ROWS:
-        a, b = _BOUNDS[r]
+        a, b = (bounds or _BOUNDS)[r]
         if r in _LOG:
             a, b = np.log10(a), np.log10(b)
         lo += [a] * n
@@ -48,7 +53,38 @@ def _cp_upper(k, n, alpha):
     return 1.0 if k >= n else float(beta.ppf(1.0 - alpha, k + 1, n - k))
 
 
+def _law_at(rec, in_dir):
+    """The posterior and the decision linearisation the record was actually produced under.
+
+    A per-candidate record carries its own ``posterior`` tag and its own ``op``; keying either on the
+    product alone substitutes the independent-residual law and the historical condition. The candidate
+    Jacobians are already cached by bayes_covariance_inflation_sensitivity.py --stage jacobians, which
+    builds them at the correlated posterior's MAP, so this stays free of the solver.
+    """
+    prod = rec["product"]
+    dj = json.loads((in_dir / f"{prod}_decision.json").read_text())
+    tol = np.asarray(dj["tol"], float)
+    z = np.load(in_dir / f"{prod}_{rec.get('posterior', 'posterior')}.npz", allow_pickle=True)
+    op = np.asarray(rec["op"], float)
+    if np.allclose(op, np.asarray(dj["decision_op"], float)):
+        G = np.atleast_2d(np.asarray(dj["decision_jacobian"], float))
+        g_map = np.array([dj["decision"]["g_map"]["pool_purity"], dj["decision"]["g_map"]["pool_yield"]])
+        return G, g_map, tol, z
+    for tag in ("", "_N48"):
+        path = in_dir / f"inflation_jacobians_{prod}{tag}.npz"
+        if not path.exists():
+            continue
+        jz = np.load(path)
+        hit = np.flatnonzero(np.all(np.isclose(np.asarray(jz["ops"], float), op, atol=1e-6), axis=1))
+        if len(hit):
+            i = int(hit[0])
+            return np.atleast_2d(np.asarray(jz["G"][i], float)), np.asarray(jz["g_map"][i], float), tol, z
+    raise SystemExit(f"{prod}: no cached decision Jacobian at op {op.tolist()}; re-run "
+                     f"bayes_covariance_inflation_sensitivity.py --stage jacobians (and --jac-tag _N48)")
+
+
 def recompute(rec: dict, in_dir: Path, spec, m_grid: int = 50, delta: float = 0.05,
+              guard: str = "solver",
               n_big: int = 4_000_000, n_protein: int = 5, seed: int = 7) -> dict:
     """Recompute the certificate at the STORED t*, under Y's true (clipped) law, with exact binomial rates.
 
@@ -60,18 +96,14 @@ def recompute(rec: dict, in_dir: Path, spec, m_grid: int = 50, delta: float = 0.
     if missing:
         raise KeyError(f"{rec.get('product', '?')}: missing raw fields {missing}; re-run step4_r2_paired_coupling.py")
     prod = rec["product"]
-    dj = json.loads((in_dir / f"{prod}_decision.json").read_text())
-    G = np.atleast_2d(np.asarray(dj["decision_jacobian"], float))
-    tol = np.asarray(dj["tol"], float)
-    g_map = np.array([dj["decision"]["g_map"]["pool_purity"], dj["decision"]["g_map"]["pool_yield"]])
-    z = np.load(in_dir / f"{prod}_posterior.npz", allow_pickle=True)
+    G, g_map, tol, z = _law_at(rec, in_dir)
 
     # Familywise budget: one CP test per grid point for each of the two coupling terms, plus the two tails of
     # the support-gap bridge. Budgeting delta/(2m) covers only the first 2m and leaves the guarantee at
     # 1 - delta*(2m+2)/(2m); count the bridge explicitly so the stated level is the level delivered.
     n_tests = 2 * m_grid + 2
     alpha = delta / n_tests
-    lo, hi = _u_bounds(n_protein)
+    lo, hi = _u_bounds(n_protein, _PRIOR_SPAN if guard == "prior-span" else _SOLVER_GUARD)
     rng = np.random.default_rng(seed)
     us = rng.multivariate_normal(np.asarray(z["mean"], float), np.asarray(z["cov"], float), size=n_big)
     usc = np.clip(us, lo, hi)
@@ -137,13 +169,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="inp", default="results/bayes/r2_paired_coupling_*.json")
     ap.add_argument("--in-dir", default="results/bayes")
+    ap.add_argument("--guard", choices=["solver", "prior-span"], default="solver",
+                    help="MUST match the guard step4 ran under, or the tube term and the "
+                         "paired tail come from different laws and the bound sums two "
+                         "incommensurable pieces")
     ap.add_argument("--spec", type=float, nargs=2, default=[0.70, 0.50])
     args = ap.parse_args()
     paths = sorted(glob.glob(args.inp))
     if not paths:
         raise SystemExit(f"no file matched {args.inp}")
     for path in paths:
-        rows = [recompute(r, Path(args.in_dir), args.spec) for r in json.loads(Path(path).read_text())]
+        rows = [recompute(r, Path(args.in_dir), args.spec, guard=args.guard)
+                for r in json.loads(Path(path).read_text())]
         Path(path).write_text(json.dumps(rows, indent=2))
         print(f"{path}:")
         for r in rows:

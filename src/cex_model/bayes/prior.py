@@ -24,7 +24,8 @@ import torch
 from cex_model.inverse.encoding import LOG_PARAMS, PARAM_ROWS, log_mask, param_names
 
 __all__ = ["DEFAULT_BOUNDS", "PhysicalPrior", "physical_prior", "components_to_u",
-           "physical_u_bounds"]
+           "physical_u_bounds", "SOLVER_GUARD_BOUNDS", "solver_guard_bounds",
+           "assert_guard_contains"]
 
 # Per-row weak physical bounds in MODEL units (lo, hi); see module docstring.
 # keq/kkin span decades (log10); nu/sigma are linear. ~2 sigma reaches each bound.
@@ -35,6 +36,25 @@ DEFAULT_BOUNDS: dict[str, tuple[float, float]] = {
     "kkin": (1e-11, 1e-3),  # model units (table 1e-6..1e2)
     "nu": (1.0, 18.0),      # characteristic charge (mAb CEX ~ 6-13)
     "sigma": (1.0, 100.0),  # steric shielding factor (mAb CEX ~ 10-95)
+}
+
+
+# The support in which the SMA solver is DEFINED, which is a different question from where the prior puts
+# its mass. Nothing here is a modelling statement, so every row sits far outside any plausible fit -- in
+# particular outside every product's fitted reference point, which DEFAULT_BOUNDS does not guarantee,
+# since a Gaussian prior puts no bound on where the data may pull the fit. Using DEFAULT_BOUNDS as the
+# guard clipped 79% of mAb C's draws in one coordinate whose floor sat above that product's own value.
+#
+# The characteristic charge has two thresholds, not one. The right-hand side needs ``csalt ** nu`` finite,
+# so nu >= 0; the analytic Jacobian forms ``csalt ** (nu - 1)`` (diffsolver/torch_solver.py, sma.py) and
+# so needs nu >= 1 wherever the salt state can reach exactly zero, which the smooth non-negativity does
+# once the raw state falls below about -0.98 at the default smoothing. The floor is set at the binding
+# one. Every posterior in the tree puts at most 3e-7 mass below it, so this costs nothing.
+SOLVER_GUARD_BOUNDS: dict[str, tuple[float, float]] = {
+    "keq": (1e-30, 1e10),
+    "kkin": (1e-30, 1e10),
+    "nu": (1.0, 50.0),
+    "sigma": (0.0, 500.0),
 }
 
 
@@ -97,18 +117,7 @@ def components_to_u(components) -> np.ndarray:
     return np.concatenate([keq, kkin, nu, sigma])
 
 
-def physical_u_bounds(n_protein: int, *, bounds: dict[str, tuple[float, float]] | None = None):
-    """``(lo, hi)`` arrays over ``u`` (length ``4*n_protein``) = the prior's physical
-    support, in the packed u order (keq, kkin, nu, sigma; keq/kkin in log10).
-
-    Posterior draws from the *unbounded* Gaussian (Laplace/SVI) can land on
-    unphysical parameters -- e.g. ``nu < 0`` for a very sloppy 2-experiment product --
-    which makes the SMA term ``csalt ** nu`` blow up (``0 ** negative -> inf``) and the
-    reference solver fail. Clipping draws to this support before simulating restricts
-    the predictive to the region where the model is defined (the out-of-bounds tail is
-    unphysical anyway).
-    """
-    bnd = {**DEFAULT_BOUNDS, **(bounds or {})}
+def _u_bounds(bnd: dict[str, tuple[float, float]], n_protein: int):
     lo: list[float] = []
     hi: list[float] = []
     for row in PARAM_ROWS:  # (keq, kkin, nu, sigma) -- matches the packed u order
@@ -118,6 +127,48 @@ def physical_u_bounds(n_protein: int, *, bounds: dict[str, tuple[float, float]] 
         lo.extend([a] * n_protein)
         hi.extend([b] * n_protein)
     return np.asarray(lo, float), np.asarray(hi, float)
+
+
+def physical_u_bounds(n_protein: int, *, bounds: dict[str, tuple[float, float]] | None = None):
+    """``(lo, hi)`` arrays over ``u`` (length ``4*n_protein``) = the span the PRIOR is scaled to,
+    in the packed u order (keq, kkin, nu, sigma; keq/kkin in log10).
+
+    This is the interval :func:`physical_prior` turns into a Gaussian mean and standard deviation,
+    so it describes where the prior puts its mass, not where the model is defined. It is NOT a
+    constraint: the prior is unbounded, and the data may pull a fitted parameter outside this span.
+    To clip draws before the solver, use :func:`solver_guard_bounds` instead.
+    """
+    return _u_bounds({**DEFAULT_BOUNDS, **(bounds or {})}, n_protein)
+
+
+def solver_guard_bounds(n_protein: int, *, bounds: dict[str, tuple[float, float]] | None = None):
+    """``(lo, hi)`` arrays over ``u`` = the support in which the SMA solver is defined.
+
+    Draws from the *unbounded* Gaussian posterior can land where the model is not computable -- the
+    right-hand side needs ``nu >= 0`` for ``csalt ** nu`` to stay finite, and the analytic Jacobian
+    needs ``nu >= 1`` for ``csalt ** (nu - 1)`` -- so draws are clipped here before simulating. The interval is deliberately far wider than any
+    plausible fit, because its only job is to keep the solver defined; using the prior's span for
+    this instead would clip the bulk of a product's draws whenever the data pull a coordinate past
+    the prior's nominal two-standard-deviation reach.
+    """
+    return _u_bounds({**SOLVER_GUARD_BOUNDS, **(bounds or {})}, n_protein)
+
+
+def assert_guard_contains(u_map, n_protein: int, *, what: str = "the fitted point") -> None:
+    """Fail loudly if the clipping guard excludes the point draws are taken around.
+
+    Clipping a posterior is a tail operation and stays one only while the guard contains the centre.
+    When it does not, every draw in that coordinate is displaced to a wall the fit never chose, and the
+    pushforward stops being a censored version of the posterior and becomes a different distribution --
+    which is how a mis-set guard once manufactured a nonlinearity verdict on one product. This is the
+    cheapest check that would have failed at the moment the guard was first applied.
+    """
+    lo, hi = solver_guard_bounds(n_protein)
+    u = np.asarray(u_map, float)
+    bad = np.flatnonzero((u < lo) | (u > hi))
+    if bad.size:
+        rows = ", ".join(f"u[{j}]={u[j]:.4g} outside [{lo[j]:.4g}, {hi[j]:.4g}]" for j in bad)
+        raise ValueError(f"solver guard does not contain {what}: {rows}")
 
 
 # Sanity guard: u packing must agree with the log-transform mask shared with the

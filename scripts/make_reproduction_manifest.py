@@ -13,7 +13,7 @@ Two targets, because the public archive may not name a product:
 ``--target public``   the synthetic-twin pipeline only. No product identifiers, no checksums of
                       product artifacts, because none ship.
 
-The stage numbering (S1--S13) matches the run order in Supplement B.
+The stage numbering (S0--S13) refines the seven-stage run order in Supplement B, which gives the key.
 """
 
 from __future__ import annotations
@@ -34,34 +34,60 @@ FIELDS = ["stage", "tier", "paper_object", "script", "flags", "output", "sha256"
 # the product or the output path. A blank paper_object means the artifact is an input to a later
 # stage rather than something the article reads directly.
 RULES: list[tuple[str, str, str, str, str, str]] = [
-    (r"^(?!.*correlated).*_posterior\.npz$", "S1", "T2", "bayes_calibrate.py",
+    (r"^(?!.*correlated)(?!multistart/).*_posterior\.npz$", "S1", "T2", "bayes_calibrate.py",
      "--product {P} --n-steps 300 --init config --map-iters 150 --engine laplace", ""),
-    (r"^.*_summary\.json$", "S1", "T2", "bayes_calibrate.py",
+    # the four cross-product summaries the S1 rule used to swallow; each has its own producer
+    (r"^decision_reduction_summary\.json$", "S1", "T2", "bayes_decision_reduction.py",
+     "defaults", ""),
+    (r"^entropy_metric_summary\.json$", "S1", "T2", "bayes_entropy_metric.py", "defaults", ""),
+    (r"^mass_residual_metric_summary\.json$", "S1", "T2", "bayes_mass_residual_metric.py",
+     "defaults", ""),
+    (r"^sigma_ablation_summary\.json$", "S1", "T2", "bayes_sigma_ablation.py", "defaults", ""),
+    (r"^LAB[0-9A-Za-z_]*_summary\.json$", "S1", "T2", "bayes_calibrate.py",
      "--product {P} --n-steps 300 --init config --map-iters 150 --engine laplace", ""),
     (r"^.*_decision\.json$", "S2", "T2", "bayes_decision.py",
      "--product {P} --n-steps 300 --map-iters 150 --mc-samples 200", ""),
-    (r"^.*_validation\.json$", "S3", "T2", "bayes_loeo.py",
-     "--product {P} --n-steps 300 --loeo --decision", "hold-out coverage, article Section 5.1"),
+    (r"^LAB[0-9A-Za-z_]*_validation\.json$", "S3", "T2", "bayes_loeo.py",
+     "--product {P} --n-steps 300 --loeo --decision", "hold-out coverage, article Section 4.2"),
+    (r"^multistart/.*_r[0-9]+_posterior\.npz$", "S4", "T2", "bayes_correlated_refit.py",
+     "--product {P} --multistart 6 --multistart-scale 0.1 --n-steps 300 --map-iters 600 "
+     "--optimizer adaptive --chunk 150 --plateau-tol 0.05 --rho-max 0.9 --seed 0", ""),
+    (r"^multistart/.*_r[0-9]+_jacobians\.npz$", "S4", "T2", "bayes_basin_closure.py",
+     "--stage jacobians --product {P} --restarts 0 1 2 3 4 5", ""),
+    (r"^multistart/.*_r[0-9]+_gradient\.npz$", "S4", "T2", "bayes_basin_closure.py",
+     "--stage gradients --product {P} --restarts 0 1 2 3 4 5", ""),
+    (r"^LAB[0-9A-Za-z_]*_basin_segment.*\.json$", "S4", "T2", "bayes_basin_closure.py",
+     "--stage segment --product {P} --from-restart 0 --to-restart 4",
+     "Supplement B, the fitted-point closure"),
+    (r"^LAB[0-9A-Za-z_]*_basin_closure\.json$", "S4", "T0", "bayes_basin_closure.py",
+     "--stage analyse --product {P}",
+     "article Section 4.1 and Supplement B, the fitted-point closure"),
+    (r"^LAB[0-9A-Za-z_]*_basin_mixture\.json$", "S4", "T0", "bayes_basin_closure.py",
+     "--stage mixture --product {P}",
+     "mass-weighted mixture of fitted points; retained in the archive, not reported in the article"),
+    (r"^multistart_action_stability\.json$", "S4", "T2", "bayes_multistart_action_stability.py",
+     "no arguments; reads results/bayes/multistart/*_posterior.npz and the deployed scans",
+     "article Table 2 and Section 4.1; the recommendation re-derived at each restart"),
     (r"^.*_correlated_multistart\.json$", "S4", "T2", "bayes_correlated_refit.py",
-     "--product HLXSYN --multistart 6 --multistart-scale 0.1 --n-steps 300 --map-iters 120 "
-     "--optimizer lbfgs --rho-max 0.9",
-     "multistart audit, article Section 5.1 and Supplement B"),
+     "--product {P} --multistart 6 --multistart-scale 0.1 --n-steps 300 --map-iters 600 "
+     "--optimizer adaptive --chunk 150 --plateau-tol 0.05 --rho-max 0.9 --seed 0",
+     "multistart audit, article Section 4.1 and Supplement B"),
     (r"^.*_correlated_loeo\.json$", "S4", "T2", "bayes_correlated_refit.py",
-     "--product {P} --decision-loeo --kernel ou --n-steps 300 --map-iters 300 --optimizer lbfgs "
-     "[--rho-max 0.9 for HLXSYN and HLXSYN, omitted for HLXSYN]", ""),
-    (r"^.*_correlated_posterior\.npz$|^.*_correlated\.json$", "S4", "T2",
+     "--product {P} --decision-loeo --kernel ou --n-steps 300 --map-iters 600 "
+     "--optimizer adaptive --chunk 150 --plateau-tol 0.05 --rho-max 0.9", ""),
+    (r"^(?!decision_discrepancy).*_correlated_posterior\.npz$"
+     r"|^(?!decision_discrepancy).*_correlated\.json$", "S4", "T2",
      "bayes_correlated_refit.py",
-     "--product {P} --kernel ou --n-steps 300 --map-iters 120 --optimizer lbfgs "
-     "[--reparam --reparam-polish 6 --reparam-damping 0.7 for HLXSYN; "
-     "--rho-max 0.9 for HLXSYN and HLXSYN]",
+     "--product {P} --kernel ou --n-steps 300 --map-iters 600 --optimizer adaptive --chunk 150 "
+     "--plateau-tol 0.05 --rho-max 0.9",
      "correlated refit; the posterior every deployment read is taken at"),
     (r"^.*_correlated_nuts.*$", "S5", "T2", "bayes_correlated_nuts.py",
      "--product HLXSYN --kernel ou --rho-max 0.9 --n-steps 300; --n-steps-lik must be repeated on "
      "the --pool-only step",
-     "Hamiltonian Monte Carlo anchor, article Section 5.1"),
+     "Hamiltonian Monte Carlo anchor; retained in the archive, not reported in the article"),
     (r"^solver_agnostic.*$", "S6", "T2", "bayes_solver_agnostic.py",
-     "--products HLXSYN HLXSYN HLXSYN HLXSYN HLXSYN --fd-rel 1e-2",
-     "independent-integrator agreement, article Section 5.1"),
+     "--products HLXSYN HLXSYN HLXSYN HLXSYN --fd-rel 1e-2",
+     "independent-integrator agreement, article Section 4.1"),
     (r"^timing\.json$", "S7", "T2", "bayes_timing.py",
      "--product HLXSYN --n-steps 150 300 --map-iters 120", ""),
     (r"^.*_prior_sensitivity\.json$", "S8", "T2", "bayes_prior_sensitivity.py",
@@ -69,6 +95,10 @@ RULES: list[tuple[str, str, str, str, str, str]] = [
     (r"^.*_sigma_ablation\.json$", "S8", "T2", "bayes_sigma_ablation.py",
      "--products HLXSYN HLXSYN HLXSYN HLXSYN HLXSYN --no-synthetic --n-steps 300 "
      "--map-iters 150 --mc", ""),
+    (r"^sigma_direction_audit_corr\.json$", "S8", "T2", "bayes_sigma_direction_audit.py",
+     "--products HLXSYN HLXSYN HLXSYN --posterior correlated_posterior  (the deployed capped refit; "
+     "the default is the independent-residual fit and also sets the filename tag)",
+     "Supplement A, the common-mode shrinkage range"),
     (r"^.*_spectral\.json$|^sigma_direction.*$", "S8", "T2", "bayes_sigma_direction_audit.py",
      "--products HLXSYN HLXSYN HLXSYN HLXSYN HLXSYN", ""),
     (r"^restricted_sigma_gain.*$", "S8", "T2", "bayes_restricted_sigma_gain.py",
@@ -81,8 +111,10 @@ RULES: list[tuple[str, str, str, str, str, str]] = [
      "--products HLXSYN HLXSYN HLXSYN HLXSYN HLXSYN --n-steps 100 120", ""),
     (r"^c_param_correlated\.json$|^decision_discrepancy(_correlated|_ou_loeo)?\.json$", "S9", "T0",
      "bayes_decision_discrepancy.py",
-     "--c-param-json results/bayes/c_param_correlated.json --label correlated-all3",
-     "decision-level discrepancy layer, article Section 5.1"),
+     "--c-param-json results/bayes/c_param_correlated.json --label correlated-all3 "
+     "(for decision_discrepancy_ou_loeo.json add --folds-json results/bayes/{product}_correlated_loeo.json "
+     "--out results/bayes/decision_discrepancy_ou_loeo.json)",
+     "decision-level discrepancy layer, article Section 3.1"),
     (r"^decision_discrepancy_hier.*\.json$|^hier_draws.*\.npz$", "S9", "T0",
      "bayes_decision_discrepancy_hier.py",
      "--seed 0 --dump-draws results/bayes/hier_draws_capB.npz; do NOT pass --v-mu; the default "
@@ -92,72 +124,126 @@ RULES: list[tuple[str, str, str, str, str, str]] = [
      "no arguments; captured stdout", ""),
     (r"^discrepancy_prior_fold_audit\.json$", "S9", "T0", "bayes_discrepancy_prior_fold_audit.py",
      "--n-iter 20000 --burn 4000 --seed 0", ""),
+    (r"^hier_prior_branch_sweep\.json$", "S9", "T0", "bayes_hier_prior_branch_sweep.py",
+     "defaults", "Supplement B, the hierarchy-prior branch sweep"),
     (r"^predictive_closure\.json$", "S9", "T0", "bayes_predictive_closure.py",
-     "no arguments", "article Table 5, the wdec columns"),
+     "no arguments", "article Section 5.1, the decision-width values"),
     (r"^.*_decision_window_predictive_hier\.json$", "S10", "T2", "bayes_decision_window.py",
      "--products HLXSYN HLXSYN HLXSYN --n-steps 300 --n-candidates 24 --n-samples 200 "
      "--seed 0 --hier-draws results/bayes/hier_draws_capB.npz --loading-cap 35.0 "
      "--sigma-meas 0.005 0.008",
-     "article Figure 3 and Table 5; the deployed scan"),
+     "article Figure 2 and article Table 3; the deployed scan"),
     (r"^.*_decision_window\.json$", "S10", "T2", "bayes_decision_window.py",
      "--products HLXSYN --n-steps 300 --n-samples 200 --n-candidates 24 --seed 0 "
      "--gate posterior_action  (the default gate is 'determinability' and does NOT reproduce this)",
-     "experiment-level value, article Table 1"),
+     "article Figure 1; the chromatogram panels"),
     (r"^hier_scan/.*$", "S10", "T2", "bayes_decision_window.py",
      "--products HLXSYN HLXSYN HLXSYN --n-steps 300 --n-candidates 24 --n-samples 200 "
      "--seed 0 --predictive --disc-json results/bayes/decision_discrepancy_correlated.json "
-     "--out-dir results/bayes/hier_scan  (the out-dir is read back by "
-     "bayes_empirical_convolution.py)", ""),
+     "--out-dir results/bayes/hier_scan", ""),
     (r"^pmeet_alignment.*$", "S11", "T2", "step2_pmeet_alignment.py",
      "--products HLXSYN HLXSYN HLXSYN --n-steps 300 --n-candidates 24 --seed 0 "
      "--spec 0.70 0.50 --w 1.0 1.0 --posterior correlated_posterior  (the default posterior is "
      "the independent-residual one and also sets the filename tag)",
-     "article Table 3"),
+     "Supplement A, the conditional-law compression table"),
     (r"^meet_margin_certificate\.json$", "S11", "T2", "step2d_meet_margin_certificate.py",
      "--products HLXSYN HLXSYN HLXSYN --n-steps 300 --n-candidates 24 --seed 0 "
      "--posterior correlated_posterior --spec 0.70 0.50 --n-mc 200000 --n-paired 400000 "
      "--delta 0.05 --n-samples 200 --sigma-meas 0.005 0.008 --n-tube-draws 200 "
      "--hier-draws results/bayes/hier_draws_capB.npz",
-     "article Table 4"),
-    (r"^empirical_convolution_window_.*$", "S11", "T2", "bayes_empirical_convolution.py",
-     "--product {P} --empirical-window --n-candidates 24 --n-steps 300 --n-inner 40000 "
-     "--load-cap 35.0 --seed 0 (--n-theta 1000 for HLXSYN, 500 for HLXSYN with "
-     "--only-loadings 28.07 29.77)",
-     "article Figure 3 and Table 5, the nonlinear reads"),
-    (r"^empirical_convolution_(?!window).*$", "S11", "T2", "bayes_empirical_convolution.py",
-     "--product {P} --n-steps 300 --n-theta 2000 --n-inner 40000 --seed 0", ""),
-    (r"^nonlinear_meet_certificate.*$", "S11", "T2", "step2e_nonlinear_meet_certificate.py",
-     "--product HLXSYN --n-steps 300 --n-candidates 24 --seed 0 --spec 0.70 0.50 "
-     "--sigma-meas 0.005 0.008 --delta 0.05 --posterior correlated_posterior "
-     "--hier-draws results/bayes/hier_draws_capB.npz --laws predictive --domain 25.0 35.0 "
-     "--extra-loadings 19.65",
-     "Supplement A Table 1; article Section 5.2, the nonlinear closure"),
+     "Supplement A Table 1; the deployed threshold certificate"),
+    (r"^route_b_predictive_action\.json$", "S11", "T0", "bayes_route_b_predictive_action.py",
+     "--n-mc 200000  (no solver: reads the cached decision Jacobians)",
+     "article Table 4; Supplement A, the deployed-law action certificate"),
+    (r"^pairwise_regret_shift\.json$", "S11", "T0", "bayes_pairwise_regret_shift.py",
+     "--ladder  (no solver: reads the cached decision Jacobians and the Route B risks)",
+     "article Table 4; Supplement A, the paired compression-regret certificate"),
+    (r"^certificate_coverage_study\.json$", "S11", "T0", "bayes_certificate_coverage_study.py",
+     "--n-rep 1000 --n-mc 100000 --n-pilot 20000  (synthetic; no solver, no product data)",
+     "Supplement A, the coverage audit"),
+    (r"^certificate_coverage_study_n4e5\.json$", "S11", "T0", "bayes_certificate_coverage_study.py",
+     "--n-rep 250 --n-mc 400000 --n-pilot 20000 --seed 7 "
+     "--out results/bayes/certificate_coverage_study_n4e5.json  (the large-sample rung of the same audit)",
+     "Supplement A, the coverage audit"),
+    (r"^inflation_jacobians_.*_N48\.npz$", "S10", "T2", "bayes_covariance_inflation_sensitivity.py",
+     "--stage jacobians --n-steps 300 --n-candidates 48 --seed 0 --jac-tag _N48  "
+     "(the nested pool; its first 24 rows reproduce the deployed cache bit for bit)",
+     "Supplement A, the pool-refinement study"),
+    (r"^inflation_jacobians_.*\.npz$", "S10", "T2", "bayes_covariance_inflation_sensitivity.py",
+     "--stage jacobians --n-steps 300 --n-candidates 24 --seed 0",
+     "cached decision Jacobians shared by the width-inflation and deployed-law action runs"),
+    (r"^pool_refinement\.json$", "S11", "T0", "bayes_pool_refinement.py",
+     "(defaults; no solver, reads the _N48 Jacobian cache)",
+     "article Section 5.2; Supplement A, the pool-refinement study"),
+    (r"^candidate_linearisation_screen\.json$", "S11", "T2", "bayes_candidate_linearisation_screen.py",
+     "--jac-tag _N48 --indices 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 45 "
+     "--n-dir 3 --z 2.0", "article Section 4.3; Supplement A, the candidate-wise linearization screen"),
+    (r"^covariance_inflation_sensitivity\.json$", "S11", "T0",
+     "bayes_covariance_inflation_sensitivity.py", "--stage analyse",
+     "Supplement B, the covariance-scale sensitivity analysis"),
+    (r"^residual_autocorrelation\.json$", "S4", "T2", "bayes_residual_autocorrelation.py",
+     "(defaults; lag-1 autocorrelation of the reference fit's within-run residuals, before and after "
+     "whitening by each product's fitted OU-plus-nugget covariance)",
+     "article Section 4.2; Supplement B, the correlated-residual refit"),
+    (r"^draw_set_comparison\.json$", "S9", "T1", "bayes_draw_set_comparison.py",
+     "(defaults; recomputes the predictive width and P(meet) at each historical condition under both "
+     "committed draw sets)",
+     "Supplement B, the canonical hierarchy draws"),
+    (r"^predictive_flip_certificate\.json$", "S12", "T1",
+     "bayes_predictive_flip_certificate.py",
+     "(defaults; assembles the two directional disagreement counts with the support-gap bridge and "
+     "re-derives them from the committed paired draws)",
+     "article Section 4.3; Supplement A, the candidate-level certificate at the deployed law"),
+    (r"^paired_draws_[A-Za-z0-9_]+_op[0-9.]+\.npz$", "S12", "T2", "step4_r2_paired_coupling.py",
+     "--save-paired on the pool-candidate certificate run below; the paired nonlinear and linearised "
+     "whitened decision draws, retained so any predictive-layer question is post-processing",
+     "article Section 4.3; Supplement A, the candidate-level certificate at the deployed law"),
+    (r"^predictive_linearisation_certificate\.json$", "S12", "T1",
+     "bayes_predictive_linearisation_certificate.py",
+     "(defaults; reuses the stored paired tail rate, which the shared additive predictive draw leaves "
+     "invariant, and re-measures only the boundary tube and the support-gap bridge)",
+     "article Section 4.3; Supplement A, the candidate-level certificate at the deployed law"),
+    (r"^candidate_certificate_joint_level\.json$", "S12", "T0",
+     "bayes_candidate_certificate_joint_level.py",
+     "(defaults; arithmetic on the stored Clopper-Pearson counts, no solver)",
+     "article Section 4.3; Supplement A, the candidate-level certificate table"),
+    (r"^r2_paired_coupling_[A-Za-z0-9_]+_op[0-9.]+\.json$", "S12", "T2", "step4_r2_paired_coupling.py",
+     "--products <one product> --posterior correlated_posterior --n-draws 4000 --seed 0 --guard solver "
+     "--op <four operating coordinates> --hier-draws results/bayes/hier_draws_capB.npz "
+     "--save-paired results/bayes/paired_draws_PRODUCT_op<loading>.npz  (the pool-candidate certificate; "
+     "the op tag in the filename is its loading, and the run cannot overwrite the historical-condition "
+     "artifact)",
+     "article Section 4.3; Supplement A, the candidate-level certificate table"),
     (r"^r2_paired_coupling.*$", "S12", "T2", "step4_r2_paired_coupling.py",
      "--products HLXSYN HLXSYN HLXSYN --n-draws 4000 --seed 0 --spec 0.70 0.50; then "
      "step4b_r2_reverdict.py --in 'results/bayes/r2_paired_coupling_*.json' --spec 0.70 0.50, "
      "which rewrites the same file in place",
-     "article Figure 1; Supplement A Table 3"),
+     ""),
     (r"^r5b_decision_sbc.*$", "S12", "T2", "step5_decision_sbc.py",
-     "--product {P} --layer ou --engine frozen --n-datasets 400 --n-post 200 "
+     "--product <from filename> --layer <from filename> --engine <from filename> --n-datasets 400 --n-post 200 "
      "--scale-sweep 0.5 1.0 --disc-wdec 1.271 --floor-wdec 1.271 --prior-cov full --pool-size 6 "
      "(defaults are n-datasets 100 and disc-wdec 0.0, neither of which reproduces this)",
-     "Supplement A Table 4"),
+     ""),
     (r"^decision_compression_real_ladder\.json$", "S13", "T0", "step2b_real_ladder.py",
      "no arguments", ""),
+    (r"^voi_nullity_prior_whitened_corr\.json$", "S13", "T0", "step3b_voi_prior_whitened.py",
+     "--posterior correlated_posterior  (reads the decision Jacobian from the cached "
+     "inflation_jacobians_{product}.npz, whose last row is the historical condition)",
+     "Supplement A Table 2; the local information-direction diagnostic"),
     (r"^voi_nullity.*prior_whitened.*$", "S13", "T0", "step3b_voi_prior_whitened.py",
-     "no arguments; cwd-independent", "article Table 1; Supplement A Table 2"),
+     "no arguments; cwd-independent", ""),
     (r"^voi_nullity.*$", "S13", "T0", "step3_voi_nullity.py",
      "no arguments; must be run from cex_model_python/", ""),
     (r"^r6_fullpipeline_calibration_iso\.json$", "S13", "T0", "step6_fullpipeline_calibration.py",
      "--n-replicates 300 --shape iso --disc-wdec 1.271 --bias-wdec 0.6 --n-post 200 "
      "--pool-size 8 --gibbs-iter 3000 --gibbs-burn 600 --gibbs-thin 6 --seed 0",
-     "article Figure 2; Supplement A Tables 5 and 6"),
+     "Supplement A Figure 1 and Supplement A Table 3"),
     (r"^r6_fullpipeline_calibration_aniso.*\.json$", "S13", "T0",
      "step6_fullpipeline_calibration.py",
      "--n-replicates 300 --shape aniso --aniso-ratio 6.0 --disc-wdec 1.271 --bias-wdec 0.6 "
      "--n-post 200 --pool-size 8 --gibbs-iter 3000 --gibbs-burn 600 --gibbs-thin 6 --seed 0 "
      "(add --fold-icc 0.5 and --out ..._aniso_icc.json for the icc variant)",
-     "article Figure 2; Supplement A Tables 5 and 6"),
+     "Supplement A Figure 1 and Supplement A Table 3"),
     (r"^synthetic_twin_truth\.json$", "S0", "T1", "make_synthetic_twin.py",
      "no arguments", "the twin's ground truth"),
 ]
@@ -165,12 +251,6 @@ RULES: list[tuple[str, str, str, str, str, str]] = [
 # Files that are not article objects. Classified rather than force-mapped, so that the
 # "provenance not recorded" note keeps its meaning.
 CLASSIFY: list[tuple[str, str, str]] = [
-    (r"(^|/)gnl_.*\.npz$", "scripts/step2e_nonlinear_meet_certificate.py",
-     "solver-pushforward cache written under --cache-dir; deleting it costs solver time, not "
-     "correctness"),
-    (r"(^|/)gs_.*\.npz$", "scripts/bayes_empirical_convolution.py",
-     "solver-pushforward cache written under --gs-cache; deleting it costs solver time, not "
-     "correctness"),
     (r"\.png$", "", "diagnostic figure written by the producing script; not an article object"),
     (r"_experiment_plan\.csv$|_real_design\.json$|_design\.json$|active_design",
      "", "design helper; not an article object"),
@@ -208,10 +288,10 @@ TWIN_STAGES: list[tuple[str, str, str, str, str]] = [
 # Every object the article and Supplement A report. Generation fails if any of these ends up with
 # no row, so the manifest cannot silently stop covering a table.
 PAPER_OBJECTS = [
-    "article Table 1", "article Table 3", "article Table 4", "article Table 5",
-    "article Figure 1", "article Figure 2", "article Figure 3",
+    "article Table 2", "article Table 3", "article Table 4",
+    "article Figure 1", "article Figure 2",
     "Supplement A Table 1", "Supplement A Table 2", "Supplement A Table 3",
-    "Supplement A Table 4", "Supplement A Tables 5 and 6",
+    "Supplement A Figure 1",
 ]
 
 
@@ -221,6 +301,13 @@ def _sha256(p: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+# Artifacts that reproduce in distribution rather than to the byte, which Supplement B records.
+NOT_BIT_EXACT = [
+    (r"^hier_draws\.npz$",
+     "read rather than rebuilt: this is the primary draw set, and the flags above rebuild the deployed one"),
+]
 
 
 def _product_of(name: str) -> str:
@@ -256,9 +343,10 @@ def referee_rows(res: Path) -> list[dict]:
         prod = _product_of(Path(rel).name)
         if "_exclDT" in rel:
             prod = "HLXSYN"
+        note = next((n for pat, n in NOT_BIT_EXACT if re.search(pat, rel)), "")
         rows.append(dict(stage=stage, tier=tier, paper_object=obj,
                          script=f"scripts/{script}", flags=flags.replace("{P}", prod or "{P}"),
-                         output=f"results/bayes/{rel}", sha256=_sha256(p), note=""))
+                         output=f"results/bayes/{rel}", sha256=_sha256(p), note=note))
     rows.sort(key=lambda r: (r["stage"] or "ZZ", r["output"]))
     return rows
 
@@ -296,7 +384,7 @@ def main() -> int:
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=FIELDS)
+        w = csv.DictWriter(f, fieldnames=FIELDS, lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
 

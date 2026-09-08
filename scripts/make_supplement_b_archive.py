@@ -60,10 +60,27 @@ THIRD_PARTY = {
 }
 # The scripts that write an artifact the article reports, plus the twin and the figures/tables.
 SCRIPTS_KEEP = [
+    # named by MANIFEST.csv, and the producer of the article's first figure; without these the archive
+    # ships a manifest whose ``script`` column points at files it does not contain
+    "make_chromatogram_figure.py",
+    "bayes_route_b_predictive_action.py",
+    "bayes_pairwise_regret_shift.py",
+    "bayes_certificate_coverage_study.py",
+    "bayes_covariance_inflation_sensitivity.py",
+    "bayes_pool_refinement.py",
+    "bayes_candidate_linearisation_screen.py",
     "make_reproduction_manifest.py",
     "_calibration_metrics.py",      # path-loaded by step5 and step6
     "bayes_nuts_real.py",           # imported by bayes_correlated_nuts.py
     "bayes_decision_discrepancy_hier_audit.py",   # named by MANIFEST.csv stage S9
+    "bayes_basin_closure.py",                     # S4: fitted-point closure (jacobians, gradients, segment, analyse)
+    "bayes_multistart_action_stability.py",       # S4: re-scores the pool at every restart
+    "bayes_hier_prior_branch_sweep.py",           # S9: hierarchy-prior branch sweep
+    "bayes_decision_reduction.py", "bayes_entropy_metric.py", "bayes_mass_residual_metric.py",
+    "bayes_residual_autocorrelation.py", "bayes_draw_set_comparison.py",
+    "bayes_predictive_flip_certificate.py", "bayes_predictive_linearisation_certificate.py",
+    "bayes_candidate_certificate_joint_level.py",
+    "assert_artifact_chain.py",     # `make check-chain`, the gate paper-from-artifacts runs first
 
     "bayes_decision_discrepancy.py",
     "bayes_decision_gain.py",
@@ -76,11 +93,11 @@ SCRIPTS_KEEP = [
     "step4b_r2_reverdict.py",
     "bayes_calibrate.py", "bayes_cmc_class.py", "bayes_correlated_nuts.py",
     "bayes_correlated_refit.py", "bayes_decision.py", "bayes_decision_discrepancy_hier.py",
-    "bayes_decision_window.py", "bayes_empirical_convolution.py", "bayes_fisher_ablation.py",
+    "bayes_decision_window.py", "bayes_fisher_ablation.py",
     "bayes_loeo.py", "bayes_prior_sensitivity.py", "bayes_sigma_ablation.py",
     "bayes_solver_agnostic.py", "make_aoas_figures.py", "make_supplement_tables.py",
     "make_synthetic_twin.py", "step2_pmeet_alignment.py", "step2b_real_ladder.py",
-    "step2d_meet_margin_certificate.py", "step2e_nonlinear_meet_certificate.py",
+    "step2d_meet_margin_certificate.py",
     "step3_voi_nullity.py", "step3b_voi_prior_whitened.py", "step4_r2_paired_coupling.py",
     "step5_decision_sbc.py", "step6_fullpipeline_calibration.py",
     "make_supplement_b_archive.py",
@@ -118,9 +135,9 @@ application to chromatography process design*.
 This archive contains the mechanistic model, the differentiable solver, the calibration and
 decision pipeline, and a **synthetic twin** the whole pipeline runs on end to end.
 
-It does **not** contain the five antibody products behind the article and its supplements -- the
-three applications and the two stress tests. Their elution and chromatographic purity traces are
-proprietary, and so are their identities, so they are absent from
+It does **not** contain the proprietary products behind the article and its supplements -- the
+three application products, and the fourth product of its Section 5.3. Their elution and
+chromatographic purity traces are proprietary, and so are their identities, so they are absent from
 this archive rather than anonymised in it: no file name, no result file and no array key here names
 a real product. Every number the article reports is derived from those traces; the artifacts behind
 them are supplied to the editorial office confidentially during review, and afterwards under a
@@ -189,7 +206,7 @@ ZENODO = {
         "steric-mass-action model, the differentiable solver, the Bayesian calibration and "
         "decision pipeline, and a <b>synthetic twin</b> the whole pipeline runs on end to end "
         "on CPU.</p>"
-        "<p>The five antibody products behind the article and its supplements---three applications and two stress tests---are <b>not</b> included. Their "
+        "<p>The proprietary products behind the article and its supplements---the three application products and the fourth product of its Section 5.3---are <b>not</b> included. Their "
         "elution and chromatographic purity traces are proprietary, and so are their identities, "
         "so they are absent from this archive rather than anonymised within it: no file name, no "
         "result file and no array key names a real product. Artifacts derived from those traces "
@@ -275,10 +292,10 @@ def stage_referee(out: Path) -> list[str]:
     notes = stage_public(out)
     src_res = ROOT / "results" / "bayes"
     n = 0
-    for f in sorted(src_res.iterdir()):
-        if f.is_dir() or f.suffix not in (".json", ".npz"):
+    for f in sorted(src_res.rglob("*")):        # the committed subdirectories ship too
+        if not f.is_file() or f.suffix not in (".json", ".npz"):
             continue
-        _copy(f, out / "results" / "bayes" / f.name)
+        _copy(f, out / "results" / "bayes" / f.relative_to(src_res))
         n += 1
     for name in ("column", "components", "experiments"):
         for f in sorted((ROOT / "configs").glob(f"{name}_*.yaml")):

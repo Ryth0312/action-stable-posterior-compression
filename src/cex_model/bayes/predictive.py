@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 
 from cex_model.app_support import simulate_elution
-from cex_model.bayes.prior import physical_u_bounds
+from cex_model.bayes.prior import solver_guard_bounds
 from cex_model.metrics import aggregate_observation_curve
 
 __all__ = ["predict_experiment", "posterior_predictive_rk23"]
@@ -54,10 +54,10 @@ def posterior_predictive_rk23(posterior, bundle, *, n_samples: int = 100, seed: 
                               level: float = 0.9, method: str = "RK23") -> dict:
     """Posterior-predictive coverage + peak errors for every experiment in ``bundle``."""
     us = posterior.samples(n_samples, seed=seed)
-    # Clip draws to the model's physical support: the unbounded Gaussian (Laplace/SVI)
+    # Clip draws to the support the solver is defined on: the unbounded Gaussian (Laplace/SVI)
     # can sample e.g. nu < 0 for a very sloppy 2-experiment product, which makes the SMA
     # term csalt**nu blow up (0**negative) and the reference solver fail to integrate.
-    lo, hi = physical_u_bounds(posterior.n_protein)
+    lo, hi = solver_guard_bounds(posterior.n_protein)
     us = np.clip(us, lo, hi)
     comps = [posterior.to_components(u) for u in us]
     groups = bundle.observation_groups

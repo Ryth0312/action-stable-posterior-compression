@@ -31,8 +31,8 @@ from cex_model.bayes.posterior import Posterior
 from cex_model.bayes.prior import physical_prior
 
 
-def audit_product(product: str, in_dir: str) -> dict:
-    post = Posterior.load(f"{in_dir}/{product}_posterior.npz")
+def audit_product(product: str, in_dir: str, posterior: str = "posterior") -> dict:
+    post = Posterior.load(f"{in_dir}/{product}_{posterior}.npz")
     n = post.n_protein
     prior = physical_prior(n)
     sp = float(prior.std[3 * n])                                   # uniform σ prior std
@@ -72,6 +72,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--in-dir", default="results/bayes")
     ap.add_argument("--out-dir", default="results/bayes")
+    ap.add_argument("--posterior", default="posterior",
+                    help="posterior tag: 'posterior' (independent-residual) or 'correlated_posterior' "
+                         "(the deployed capped refit; also sets the output filename tag)")
     ap.add_argument("--products", nargs="*",
                     default=['HLXSYN'])
     args = ap.parse_args()
@@ -79,12 +82,13 @@ def main() -> None:
     out = {}
     for p in args.products:
         try:
-            out[p] = audit_product(p, args.in_dir)
+            out[p] = audit_product(p, args.in_dir, args.posterior)
         except FileNotFoundError:
             print(f"  [skip] {p}: no committed posterior")
 
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
-    (Path(args.out_dir) / "sigma_direction_audit.json").write_text(json.dumps(out, indent=2))
+    tag = "" if args.posterior == "posterior" else "_corr"
+    (Path(args.out_dir) / f"sigma_direction_audit{tag}.json").write_text(json.dumps(out, indent=2))
 
     print(f"{'product':14s} {'σ marginals (per-comp)':40s} {'common(marg/cond)':18s} "
           f"{'min-comp cond(frac%)':22s} {'worst_dir_σ':11s}")
@@ -93,7 +97,7 @@ def main() -> None:
         cm = f"{r['common_mode_marginal']:.2f}/{r['common_mode_conditional']:.3f}"
         mc = f"{r['min_component_conditional']:.2f} ({r['min_component_fraction_pct']:.1f})"
         print(f"{p:14s} {mg:40s} {cm:18s} {mc:22s} {r['worst_dir_sigma']:.3f}")
-    print(f"\n  json -> {Path(args.out_dir) / 'sigma_direction_audit.json'}")
+    print(f"\n  json -> {Path(args.out_dir) / f'sigma_direction_audit{tag}.json'}")
 
 
 if __name__ == "__main__":

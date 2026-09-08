@@ -1,7 +1,13 @@
-"""Regenerate the two AOAS article figures from committed result JSON (no solver, no torch).
+"""Regenerate the figures built from committed result JSON (no solver, no torch).
 
-fig_r2_triage    <- results/bayes/r2_paired_coupling_*.json      (step4/step4b)
+fig_window       <- results/bayes/*_decision_window*.json        article Figure 2
 fig_calibration  <- results/bayes/r6_fullpipeline_calibration_{iso,aniso}.json  (step6)
+                                                                 Supplement A Figure 1
+fig_r2_triage    <- results/bayes/r2_paired_coupling_*.json      (step4/step4b); a diagnostic,
+                                                                 included in no document
+
+Article Figure 1 is not built here: it needs the raw traces and comes from
+scripts/make_chromatogram_figure.py.
 
 Usage:  python scripts/make_aoas_figures.py [--out-dir docs]
 """
@@ -21,7 +27,8 @@ from matplotlib.patches import Patch
 # Authored at the imsart text-block width so \includegraphics[width=\textwidth] does not shrink the type.
 plt.rcParams.update({"font.size": 8, "axes.titlesize": 8.5, "axes.labelsize": 8,
                      "xtick.labelsize": 7.5, "ytick.labelsize": 7.5, "legend.fontsize": 7.5,
-                     "figure.titlesize": 9})
+                     "figure.titlesize": 9,
+                     "pdf.fonttype": 42, "ps.fonttype": 42})   # TrueType, not Type 3
 TEXT_IN = 5.0
 
 LABEL = {'HLXSYN': 'mAb A'}
@@ -94,7 +101,7 @@ def fig_cal(src_iso: Path, src_aniso: Path, out: Path, product: str = "HLXSYN"):
         ax.set_ylim(-0.03, 1.05)
         ax.set_xlabel(r"predicted $\hat p$")
         ax.set_title(title)
-    axes[0].set_ylabel("realised frequency")
+    axes[0].set_ylabel("realized frequency")
     # Same as fig_r2: the caption already gives the product, the replicate count and the interval type, so a
     # suptitle would only duplicate it. The count is still asserted here against the artifact.
     n = next(r["n"] for r in _rows(src_iso) if r["product"] == product)
@@ -128,24 +135,6 @@ def _safe_range(lo, hi):
 
 def fig_window(res: Path, out: Path):
     fig, axes = plt.subplots(1, 3, figsize=(TEXT_IN, 2.8), sharey=True)
-    # Nonlinear empirical-convolution reads, from the _capB runs: those integrate the predictive layer
-    # over the same hierarchy draws as the screening scan, so the plotted gap is a decision-law
-    # difference and nothing else. The pre-capB files used the primary draw set and are not comparable
-    # with the scan -- on mAb A that draw-set effect reaches 0.017, as large as the law effect itself.
-    # mAb A's pool was scanned in full; on mAb C the solver is far more expensive, so only a screened
-    # subset was run and the below-range candidate comes from the 2-op file. Both mAb C files are
-    # needed, or the one candidate that clears the screening threshold appears without its counterpart.
-    emp = {}
-    for prod in ('HLXSYN',):
-        f = res / f"empirical_convolution_window_{prod}_capB.json"
-        if f.exists():
-            emp[prod] = [(r["loading"], r["phat_meet"]) for r in json.loads(f.read_text())["rows"]]
-    f2 = res / "empirical_convolution_HLXSYN_capB.json"
-    if f2.exists():
-        have = {round(x, 2) for x, _ in emp.get("HLXSYN", [])}
-        for o in json.loads(f2.read_text())["ops"].values():
-            if round(o["op"][0], 2) not in have:
-                emp.setdefault("HLXSYN", []).append((o["op"][0], o["p_meet_empirical"]))
     for ax, prod in zip(axes, ['HLXSYN']):
         d = json.loads((res / f"{prod}_decision_window_predictive_hier.json").read_text())
         rows = sorted(d["rows"], key=lambda r: r["loading"])
@@ -180,32 +169,26 @@ def fig_window(res: Path, out: Path):
         if not dep or bs["loading"] != max(dep, key=lambda r: r["p_meet"])["loading"]:
             ax.plot([bs["loading"]], [bs["p_meet"]], "^", ms=6, color="tab:orange",
                     mec="0.2", mew=0.4, zorder=6)
-        by_load = {round(r["loading"], 2): r["p_meet"] for r in rows}
-        for x, y in emp.get(prod, []):
-            scr = by_load.get(round(x, 2))
-            if scr is not None:                      # tie each nonlinear read to its screening value
-                ax.plot([x, x], [min(scr, y), max(scr, y)], "-", color="tab:red", lw=0.7,
-                        alpha=0.55, zorder=1.5)
-            # Under the screening markers: where the two laws agree the circle sits inside the open diamond,
-            # which is the whole point on mAb A and would be hidden if the diamonds were drawn on top.
-            ax.plot([x], [y], "D", ms=4.5, mfc="none", mec="tab:red", mew=1.0, zorder=1.6)
         if prod == "HLXSYN":                   # everything sits on zero; give the reader the scale
-            ax.annotate(r"max $1{\times}10^{-5}$", (0.5, 0.16), xycoords="axes fraction",
+            # read off the scan rather than spelling it out, so a refit cannot leave the panel
+            # disagreeing with the deployment table that quotes the same maximum
+            e = int(np.floor(np.log10(bs["p_meet"])))
+            ax.annotate(rf"max ${round(bs['p_meet'] / 10 ** e)}{{\times}}10^{{{e}}}$",
+                        (0.5, 0.16), xycoords="axes fraction",
                         ha="center", fontsize=6.5, color="0.25")
         ax.set_xlim(xlo, xhi)
         ax.set_title(LABEL[prod], fontsize=9)
         ax.set_xlabel("loading (g/L)")
     axes[0].set_ylim(-0.04, 1.06)
     axes[0].set_ylabel(r"$P(\mathrm{meet})$")
-    # The circles carry every screening number in the deployment table, so they need legend entries of their
+    # The circles carry every probability in the deployment table, so they need legend entries of their
     # own; without them the two marks that hold all the data are the only unlabelled things on the page.
     handles = [
-        plt.Line2D([], [], ls="none", marker="o", ms=3.5, color="tab:blue", label="screen, in deployment domain"),
-        plt.Line2D([], [], ls="none", marker="o", ms=3, mfc="white", mec="0.45", label="screen, outside it"),
-        plt.Line2D([], [], ls="none", marker="D", ms=4, mfc="none", mec="tab:red", label="nonlinear read"),
+        plt.Line2D([], [], ls="none", marker="o", ms=3.5, color="tab:blue", label="in deployment domain"),
+        plt.Line2D([], [], ls="none", marker="o", ms=3, mfc="white", mec="0.45", label="outside it"),
         plt.Line2D([], [], ls="none", marker="s", ms=5, color="black", label="historical"),
         plt.Line2D([], [], ls="none", marker="*", ms=10, color="tab:green", label="best deployable"),
-        plt.Line2D([], [], ls="none", marker="^", ms=6, color="tab:orange", label="best screen, not deployable"),
+        plt.Line2D([], [], ls="none", marker="^", ms=6, color="tab:orange", label="best in pool, not deployable"),
         Patch(color="#cfe3f5", label="deployment domain"),
         Patch(color="#f3ded0", label="adequacy fails"),
     ]

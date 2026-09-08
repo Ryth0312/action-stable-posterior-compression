@@ -1,5 +1,5 @@
 .POSIX:
-.PHONY: help smoke synthetic synthetic-quick synthetic-run paper-from-artifacts regen-postprocess regen-calibration manifest clean-twin
+.PHONY: help smoke synthetic synthetic-quick synthetic-run check-chain paper paper-jasa paper-jasa-blind paper-from-artifacts regen-postprocess regen-calibration manifest clean-twin
 
 PYTHON ?= python3
 export OMP_NUM_THREADS ?= 4
@@ -9,6 +9,7 @@ help:
 	@echo "make smoke                 fast check: imports, the twin loads, its truth file parses"
 	@echo "make synthetic-quick       T1: the whole chain on the twin at reduced resolution (minutes)"
 	@echo "make synthetic             T1: the same chain at the article's resolution (hours)"
+	@echo "make check-chain           T0: assert the artifacts are mutually consistent (gates the tables)"
 	@echo "make paper-from-artifacts  T0: rebuild the article figures and table source from artifacts"
 	@echo "make regen-postprocess     T0: re-derive the post-processed artifacts (overwrites them)"
 	@echo "make regen-calibration     T0: re-run the 300-replicate calibration study (hours; overwrites)"
@@ -54,7 +55,22 @@ synthetic-run:
 # --------------------------------------------------------------------------- T0: from artifacts
 # Torch-free. Needs the committed artifacts, which ship only in the confidential referee bundle.
 # This target only READS them: it writes figures and table source, and overwrites no artifact.
-paper-from-artifacts:
+# Every article table is downstream of the same fitted law, candidate pool and hierarchy draw set.
+# This refuses to emit one when they have gone out of step, so a partial re-run cannot reach the PDF.
+check-chain:
+	$(PYTHON) scripts/assert_artifact_chain.py --results results/bayes --manifest MANIFEST.csv
+
+# --------------------------------------------------------------------------- the three builds of the paper
+# The .tex files carry the AOAS layout by default; \jasa and \blind are set from the command line.
+TEXS = paper_aoas paper_aoas_supplement paper_aoas_supplement_b
+paper:
+	cd docs && for t in $(TEXS); do latexmk -pdf -interaction=nonstopmode $$t.tex; done
+paper-jasa:
+	cd docs && for t in $(TEXS); do latexmk -pdf -interaction=nonstopmode -usepretex='\def\jasa{1}' -jobname=$${t}_jasa $$t.tex; done
+paper-jasa-blind:
+	cd docs && for t in $(TEXS); do latexmk -pdf -interaction=nonstopmode -usepretex='\def\jasa{1}\def\blind{1}' -jobname=$${t}_jasa_blind $$t.tex; done
+
+paper-from-artifacts: check-chain
 	mkdir -p docs
 	$(PYTHON) scripts/make_aoas_figures.py --results results/bayes --out-dir docs
 	$(PYTHON) scripts/make_supplement_tables.py > docs/_supplement_tables.tex
@@ -71,7 +87,7 @@ regen-postprocess:
 	@echo "regen-postprocess OK -- compare against MANIFEST.csv checksums"
 
 # A 300-replicate simulation study, not a post-processing step: hours of CPU, and it overwrites the
-# committed r6_* files that article Figure 2 and Supplement A Tables 5 and 6 are drawn from.
+# committed r6_* files that Supplement A's Figure 1 and Tables 4 and 5 are drawn from.
 regen-calibration:
 	$(PYTHON) scripts/step6_fullpipeline_calibration.py --n-replicates 300 --shape iso \
 	    --disc-wdec 1.271 --bias-wdec 0.6 --n-post 200 --pool-size 8 --gibbs-iter 3000 \

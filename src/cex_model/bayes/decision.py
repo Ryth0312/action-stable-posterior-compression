@@ -27,7 +27,8 @@ import torch
 from cex_model.app_support import group_indices
 from cex_model.bayes.active import _sim_for_op
 from cex_model.bayes.likelihood import unpack_u
-from cex_model.bayes.prior import physical_u_bounds
+from cex_model.bayes.prior import (assert_guard_contains, physical_u_bounds,
+                                   solver_guard_bounds)
 from cex_model.collection import optimize_collection_window
 from cex_model.diffsolver.collection_objective import (
     differentiable_fixed_window_objective,
@@ -229,7 +230,7 @@ def _pool_quantities(curve: np.ndarray, start_idx: int, end_idx: int, main_idx) 
 def decision_covariance_mc(posterior, bundle, op, *, n_samples: int = 200, seed: int = 0,
                            n_steps: int = 120, reselect: bool = False, acid_max: float = _ACID_MAX,
                            main_min: float = _MAIN_MIN, basic_max: float = _BASIC_MAX,
-                           grid: int = 40, return_gs: bool = False) -> dict:
+                           grid: int = 40, return_gs: bool = False, clip_bounds=None) -> dict:
     """Sample-covariance of ``g`` over posterior draws (the nonlinear cross-check of ``C``).
 
     For each draw ``u ~ posterior``: simulate the curve at ``op`` on the (fast) differentiable
@@ -239,14 +240,23 @@ def decision_covariance_mc(posterior, bundle, op, *, n_samples: int = 200, seed:
     Returns ``{C_mc, mean_g, std_g, n_used}`` (plus the raw per-draw ``gs`` (n_used x 2) when
     ``return_gs=True`` -- the posterior-predictive decision pushforward used by
     :mod:`cex_model.bayes.decision_window` for P(meet-spec) / expected regret).
+
+    ``clip_bounds`` is the ``(lo, hi)`` support draws are clipped to before the solver sees them; it
+    defaults to :func:`cex_model.bayes.prior.solver_guard_bounds`, the interval in which the model is
+    defined. Passing :func:`~cex_model.bayes.prior.physical_u_bounds` instead reproduces runs made before
+    the two were separated, when the prior's elicitation span was reused as the guard and clipped the bulk
+    of a product's draws whenever the data pulled a coordinate past its nominal two-standard-deviation
+    reach.
     """
     n = bundle.components.n_protein
     grp = group_indices(bundle.components)
     sim = _sim_for_op(bundle, op, n_steps)
     us = posterior.samples(n_samples, seed=seed)
-    # clip to physical support (sloppy products can sample nu<0 etc., which makes the
-    # SMA term blow up and pollutes the MC covariance with NaNs); see prior.physical_u_bounds
-    lo, hi = physical_u_bounds(n)
+    # clip to the support the solver is defined on (sloppy products can sample nu<0, which makes the
+    # SMA term blow up and pollutes the MC covariance with NaNs); see prior.solver_guard_bounds
+    lo, hi = solver_guard_bounds(n) if clip_bounds is None else clip_bounds
+    if clip_bounds is None:                      # the default guard must contain what it clips around
+        assert_guard_contains(posterior.u_map, n, what="this product's fitted reference point")
     us = np.clip(us, lo, hi)
 
     # Fixed window: indices on the (theta-independent) time grid at the MAP curve.

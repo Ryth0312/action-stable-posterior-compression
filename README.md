@@ -8,9 +8,9 @@ application to chromatography process design*.
 This archive contains the mechanistic model, the differentiable solver, the calibration and
 decision pipeline, and a **synthetic twin** the whole pipeline runs on end to end.
 
-It does **not** contain the five antibody products behind the article and its supplements -- the
-three applications and the two stress tests. Their elution and chromatographic purity traces are
-proprietary, and so are their identities, so they are absent from
+It does **not** contain the proprietary products behind the article and its supplements -- the
+three application products, and the fourth product of its Section 5.3. Their elution and
+chromatographic purity traces are proprietary, and so are their identities, so they are absent from
 this archive rather than anonymised in it: no file name, no result file and no array key here names
 a real product. Every number the article reports is derived from those traces; the artifacts behind
 them are supplied to the editorial office confidentially during review, and afterwards under a

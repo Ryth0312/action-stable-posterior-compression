@@ -74,19 +74,19 @@
     {
       "id": "syn_25gL_25CV_20_95",
       "n_fractions": 21,
-      "peak_total_g_L": 3.138820004712479,
+      "peak_total_g_L": 3.0978543840833654,
       "file": "data/synthetic_twin/syn_25gL_25CV_20_95.csv"
     },
     {
       "id": "syn_45gL_25CV_20_95",
       "n_fractions": 21,
-      "peak_total_g_L": 4.452412782344967,
+      "peak_total_g_L": 4.453789687671238,
       "file": "data/synthetic_twin/syn_45gL_25CV_20_95.csv"
     },
     {
       "id": "syn_35gL_25CV_05_105",
       "n_fractions": 21,
-      "peak_total_g_L": 4.652759017222617,
+      "peak_total_g_L": 4.715647643484265,
       "file": "data/synthetic_twin/syn_35gL_25CV_05_105.csv"
     }
   ],

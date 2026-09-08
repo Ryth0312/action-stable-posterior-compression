@@ -326,9 +326,65 @@ def ridge_reparam_report(H, Sigma_corr, grad, prior_std, G, Ti, g_map, *,
     )
 
 
+def _adaptive_map(u, neglogpost, torch, *, chunk, max_iters, plateau_tol, losses, verbose=False):
+    """L-BFGS run in chunks until the objective stops improving, rather than for a fixed budget.
+
+    The step size is already adaptive here: strong-Wolfe line search grows and shrinks it per
+    iteration, which is what lets this objective descend on a ridge whose Hessian condition number
+    is order 1e7. What the fixed-budget paths lack is a stopping rule tied to the objective, so a
+    product that needs thousands of iterations silently stops wherever the budget ran out.
+
+    This runs ``chunk`` L-BFGS iterations at a time and stops once a whole chunk buys less than
+    ``plateau_tol``, or once ``max_iters`` iterations have been spent. Deterministic given the
+    start point. Returns the termination record that ends up in the artifact, so a plateau stop is
+    distinguishable from a budget stop.
+
+    A first-order alternative -- Adam from a large step, halving on any uphill step -- was measured
+    on mAb A and rejected: the step ratchets down on the ill-conditioned ridge and the per-step
+    progress falls below any absolute tolerance while the objective is still far from flat, ending
+    at 209.2 against the 146.8 the line search reaches.
+
+    The chunking is not free: each chunk starts a fresh L-BFGS and discards the curvature history,
+    so per iteration this descends more slowly than one uninterrupted run (mAb A, 120 iterations:
+    152.07 chunked against 146.82 uninterrupted). Use it when a stopping rule is wanted, not to
+    reach a given loss sooner.
+    """
+    total, chunks = 0, 0
+    prev = float(neglogpost().detach())
+    losses.append(prev)
+    while total < int(max_iters):
+        n = min(int(chunk), int(max_iters) - total)
+        opt = torch.optim.LBFGS([u], lr=1.0, max_iter=n, history_size=25,
+                                tolerance_grad=1e-8, tolerance_change=1e-12,
+                                line_search_fn="strong_wolfe")
+
+        def closure():
+            opt.zero_grad()
+            loss = neglogpost()
+            loss.backward()
+            losses.append(float(loss.detach()))
+            return loss
+
+        opt.step(closure)
+        total += n
+        chunks += 1
+        cur = float(neglogpost().detach())
+        gain = prev - cur
+        if verbose:
+            print(f"  adaptive: {total} iters, loss {cur:.4f}, chunk gain {gain:.4f}")
+        if gain < plateau_tol:
+            return dict(reason="plateau", iters=total, chunks=chunks, last_chunk_gain=gain,
+                        plateau_tol=plateau_tol, chunk=int(chunk), final_loss=cur)
+        prev = cur
+    return dict(reason="iteration limit", iters=total, chunks=chunks,
+                last_chunk_gain=prev - float(neglogpost().detach()),
+                plateau_tol=plateau_tol, chunk=int(chunk), final_loss=prev)
+
+
 def refit_correlated(pid, decf, *, kernel="ou", n_steps=300, map_iters=300, out=None,
                      pool_hyper=None, cpath=None, optimizer="adam", rho_max=None, verbose=True,
-                     init_u0=None, write=True, reparam=False, reparam_polish=6, reparam_damping=0.7):
+                     init_u0=None, write=True, reparam=False, reparam_polish=6, reparam_damping=0.7,
+                     plateau_tol=0.1, chunk=60, posterior_out=None):
     """RUN ON COLAB. Re-fit MAP+Laplace under the block-correlated likelihood and
     recompute the decision quantities. Writes {pid}_correlated.json and a c_param JSON.
 
@@ -396,6 +452,7 @@ def refit_correlated(pid, decf, *, kernel="ou", n_steps=300, map_iters=300, out=
     def neglogpost():
         return corr_negloglik(u) - prior.log_prob(u)
 
+    term = None
     if optimizer == "lbfgs":
         # quasi-Newton: converges the ill-conditioned (correlation-flattened) ridge Adam
         # cannot. One .step() runs up to map_iters inner iterations with a Wolfe line search.
@@ -411,6 +468,10 @@ def refit_correlated(pid, decf, *, kernel="ou", n_steps=300, map_iters=300, out=
             return loss
 
         opt.step(closure)
+    elif optimizer == "adaptive":
+        # mAb C does not level off inside a fixed-step budget; this stops on the objective instead.
+        term = _adaptive_map(u, neglogpost, torch, chunk=chunk, max_iters=map_iters,
+                             plateau_tol=plateau_tol, losses=losses, verbose=verbose)
     else:
         opt = torch.optim.Adam([u], lr=0.05)
         for _ in range(map_iters):
@@ -509,10 +570,11 @@ def refit_correlated(pid, decf, *, kernel="ou", n_steps=300, map_iters=300, out=
             polish_map_shift=float(np.linalg.norm(u_pol - u_map)),
             g_map_pre=list(map(float, np.ravel(g_map))), g_map_post=list(map(float, np.ravel(g_map_pol))),
             wdec_deployed=wdec_corr,
-            verdict=("if post.newton_decrement_identified << 1 and post.decision_energy_null_frac ~ 0 and "
-                     "the post decision reads (wdec/g/P(meet)) match the deployed, option-(1) holds: a valid "
-                     "identified-subspace Laplace whose decision reads equal the deployed warm-started ones."),
         )
+        # The block records what the polish measured; it does not assert that option (1) holds. On the
+        # deployed mAb A fit it does not: newton_decrement_identified is 5.13 before the polish and 2.68
+        # after, against a condition of << 1, and grad_whitened_total rises from 266 to 1042. The article
+        # deploys the fitted-point Gauss-Newton working law and claims nothing from this report.
     else:
         reparam_report = None
     try:
@@ -521,6 +583,15 @@ def refit_correlated(pid, decf, *, kernel="ou", n_steps=300, map_iters=300, out=
         rep = {"error": f"{type(ex).__name__}: {ex}", "note": "recompute P(meet) via bayes_decision_discrepancy.py"}
 
     result = dict(product=pid, kernel=kernel, hyper=hyper, decision_op=op, n_steps=n_steps,
+                  optimizer=optimizer,
+                  # how the MAP loop ended: a plateau stop is a statement about the objective,
+                  # an iteration-limit stop only about the budget.
+                  optimizer_termination=(term if term is not None else dict(
+                      reason="iteration limit", iters=int(map_iters), plateau_tol=None,
+                      note=("lbfgs: one torch.optim.LBFGS step at max_iter=map_iters with "
+                            "strong-Wolfe line search, tolerance_grad 1e-8, tolerance_change 1e-12"
+                            if optimizer == "lbfgs" else
+                            "adam: map_iters steps at a fixed lr of 0.05"))),
                   u_map_iid=u0.tolist(), u_map_corr=u_map.tolist(),
                   map_shift=float(np.linalg.norm(u_map - u0)),
                   worst_dir_iid=post_iid_worst_dir(post_iid, prior),
@@ -537,16 +608,23 @@ def refit_correlated(pid, decf, *, kernel="ou", n_steps=300, map_iters=300, out=
                   C_param_corr=C_corr.tolist(), decision_report=rep)
     if write:
         out = out or os.path.join(RES, f"{pid}_correlated.json")
+        # a probe run points --out at a directory that need not exist yet; the fit behind this is
+        # hours long, so create it rather than losing the result to a missing mkdir
+        os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
         json.dump(result, open(out, "w"), indent=2)
         # c_param JSON for the discrepancy recompute
         cpath = cpath or os.path.join(RES, "c_param_correlated.json")
+        os.makedirs(os.path.dirname(os.path.abspath(cpath)), exist_ok=True)
         cp = json.load(open(cpath)) if os.path.exists(cpath) else {}
         cp[pid] = C_corr.tolist()
         json.dump(cp, open(cpath, "w"), indent=2)
         # persist the FULL correlated posterior (Sigma_corr, dim 4n) so the predictive operating-window
         # scan (bayes_decision_window.py --predictive) can recompute G Sigma_corr G^T at OTHER candidate
         # ops -- {pid}_correlated.json stores only C_param_corr at the historical op.
-        post_corr.save(os.path.join(RES, f"{pid}_correlated_posterior.npz"))
+        post_corr.save(os.path.splitext(out)[0] + "_posterior.npz")
+    if posterior_out:                            # a restart keeps its law even though write=False
+        os.makedirs(os.path.dirname(os.path.abspath(posterior_out)), exist_ok=True)
+        post_corr.save(posterior_out)
     if verbose and write:
         print(f"[{pid}] map_shift={result['map_shift']:.3f}  "
               f"worst_dir {result['worst_dir_iid']:.3f}->{result['worst_dir_corr']:.3f}  "
@@ -555,7 +633,8 @@ def refit_correlated(pid, decf, *, kernel="ou", n_steps=300, map_iters=300, out=
 
 
 def multistart_correlated(pid, decf, *, n_restarts=6, scale=0.3, seed=0, kernel="ou",
-                          n_steps=300, map_iters=120, optimizer="lbfgs", rho_max=None):
+                          n_steps=300, map_iters=120, optimizer="lbfgs", rho_max=None,
+                          plateau_tol=0.1, chunk=60):
     """RUN ON COLAB (torch). L-BFGS multistart stability check for the correlated refit.
 
     The correlated MAP drifts along the flattened k_eq--nu ridge and does not settle to a unique
@@ -581,8 +660,11 @@ def multistart_correlated(pid, decf, *, n_restarts=6, scale=0.3, seed=0, kernel=
     print("=" * 92)
     # restart 0 = canonical start; its hyper is fixed for every restart. write=False throughout so a
     # multistart run (possibly at coarse n_steps) never clobbers the committed canonical artifacts.
+    msdir = os.path.join(RES, "multistart")
     r0 = refit_correlated(pid, decf, kernel=kernel, n_steps=n_steps, map_iters=map_iters,
-                          optimizer=optimizer, rho_max=rho_max, verbose=False, write=False)
+                          optimizer=optimizer, rho_max=rho_max, verbose=False, write=False,
+                          plateau_tol=plateau_tol, chunk=chunk,
+                          posterior_out=os.path.join(msdir, f"{pid}_r0_posterior.npz"))
     hyper0 = r0["hyper"]
     print(f"  restart 0 (canonical): ||u_map - u0|| = {r0['map_shift']:7.3f}  "
           f"worst_dir={r0['worst_dir_corr']:.4f}  wdec={r0['wdec_corr']:.4f}  "
@@ -595,7 +677,9 @@ def multistart_correlated(pid, decf, *, n_restarts=6, scale=0.3, seed=0, kernel=
         try:
             rk = refit_correlated(pid, decf, kernel=kernel, n_steps=n_steps, map_iters=map_iters,
                                   optimizer=optimizer, rho_max=rho_max, verbose=False,
-                                  pool_hyper=hyper0, init_u0=u_pert, write=False)
+                                  pool_hyper=hyper0, init_u0=u_pert, write=False,
+                                  plateau_tol=plateau_tol, chunk=chunk,
+                                  posterior_out=os.path.join(msdir, f"{pid}_r{k}_posterior.npz"))
             lk = float(rk["map_loss_last"])
             finite = all(_np.isfinite([rk["worst_dir_corr"], rk["wdec_corr"], *rk["g_map"]]))
             conv = finite and (lk <= canon_loss * (1 + loss_tol))
@@ -635,7 +719,17 @@ def multistart_correlated(pid, decf, *, n_restarts=6, scale=0.3, seed=0, kernel=
                     range=[float(_np.nanmin(x)), float(_np.nanmax(x))])
 
     summary = dict(
-        product=pid, n_restarts=n_restarts, scale=scale, n_steps=n_steps, map_iters=map_iters,
+        product=pid, n_restarts=n_restarts, scale=scale, seed=int(seed),
+        perturbation=("u0 + scale * sigma_prior * z, z ~ N(0,I) from "
+                      "numpy.random.default_rng(seed), drawn once per restart in order"),
+        optimizer=optimizer,
+        optimizer_settings=(dict(plateau_tol=plateau_tol, chunk=chunk, ceiling=map_iters)
+                            if optimizer == "adaptive" else
+                            dict(lr=1.0, max_iter=map_iters, tolerance_grad=1e-8,
+                                 tolerance_change=1e-12, line_search="strong_wolfe")
+                            if optimizer == "lbfgs" else dict(lr=0.05, iters=map_iters)),
+        optimizer_termination=[r.get("optimizer_termination") for r in restarts],
+        n_steps=n_steps, map_iters=map_iters,
         hyper=hyper0, canonical_loss=canon_loss, loss_tol=loss_tol,
         n_converged=n_conv, n_diverged=n_div,
         note=("Among restarts that converge to within loss_tol of the canonical fit, the covariance-based "
@@ -659,8 +753,9 @@ def multistart_correlated(pid, decf, *, n_restarts=6, scale=0.3, seed=0, kernel=
         decision_stability_converged=dict(pool_purity=_spread(gpur), pool_yield=_spread(gyld)),
         restarts=[{k: v for k, v in r.items() if k in
                    ("restart", "converged", "map_loss_last", "worst_dir_corr", "wdec_corr", "g_map",
+                    "u_map_corr",
                     "grad_norm", "grad_norm_whitened", "hess_psd", "hess_cond", "hess_eig_min",
-                    "hess_eig_max", "p_meet", "action", "error")}
+                    "hess_eig_max", "p_meet", "action", "error", "optimizer_termination")}
                   for r in restarts])
     out = os.path.join(RES, f"{pid}_correlated_multistart.json")
     json.dump(summary, open(out, "w"), indent=2, default=str)
@@ -697,7 +792,8 @@ def post_iid_worst_dir(post, prior):
         return float("inf")                       # eigensolver non-convergence -> flag as diverged
 
 
-def _corr_map_fit(u0, predict_fn, obs, prior, idx_t, Kinv, *, optimizer, map_iters):
+def _corr_map_fit(u0, predict_fn, obs, prior, idx_t, Kinv, *, optimizer, map_iters,
+                  plateau_tol=0.1, chunk=60):
     """Refit the MAP under a fixed block-correlated whitening (shared with refit_correlated).
     Returns (u_map, Sigma_corr)."""
     import torch
@@ -716,7 +812,10 @@ def _corr_map_fit(u0, predict_fn, obs, prior, idx_t, Kinv, *, optimizer, map_ite
     def neglogpost():
         return corr_negloglik(u) - prior.log_prob(u)
 
-    if optimizer == "lbfgs":
+    if optimizer == "adaptive":
+        _adaptive_map(u, neglogpost, torch, chunk=chunk, max_iters=map_iters,
+                      plateau_tol=plateau_tol, losses=[])
+    elif optimizer == "lbfgs":
         opt = torch.optim.LBFGS([u], lr=1.0, max_iter=map_iters, history_size=25,
                                 tolerance_grad=1e-8, tolerance_change=1e-12,
                                 line_search_fn="strong_wolfe")
@@ -741,7 +840,8 @@ def _corr_map_fit(u0, predict_fn, obs, prior, idx_t, Kinv, *, optimizer, map_ite
 
 
 def decision_loeo_correlated(pid, decf, *, kernel="ou", n_steps=300, map_iters=300, optimizer="lbfgs",
-                             rho_max=None, pool_hyper=None, spec=(0.70, 0.50), out=None, verbose=True):
+                             rho_max=None, pool_hyper=None, spec=(0.70, 0.50), out=None, verbose=True,
+                             plateau_tol=0.1, chunk=60):
     """RUN ON COLAB. OU-consistent decision leave-one-experiment-out (reviewer step 1).
 
     Re-runs each decision hold-out fold under the OU+nugget block likelihood, so the per-fold decision
@@ -807,7 +907,8 @@ def decision_loeo_correlated(pid, decf, *, kernel="ou", n_steps=300, map_iters=3
                 Kinv.append(torch.tensor(np.linalg.inv(Sig), dtype=DTYPE))
                 idx_t.append(torch.tensor(b["idx"]))
             u_map, Sigma_corr = _corr_map_fit(u_full, predict_fn, obs, prior, idx_t, Kinv,
-                                              optimizer=optimizer, map_iters=map_iters)
+                                              optimizer=optimizer, map_iters=map_iters,
+                                              plateau_tol=plateau_tol, chunk=chunk)
             post_corr = Posterior.from_template(mean=u_map, cov=Sigma_corr, u_map=u_map, prior=prior,
                                                 template=bundle.components, sigma_obs=post_iid.sigma_obs,
                                                 engine="laplace_correlated")
@@ -854,8 +955,17 @@ def main():
     ap.add_argument("--n-steps", type=int, default=300)
     ap.add_argument("--map-iters", type=int, default=120,
                     help="MAP iters (adam) or max inner L-BFGS iters")
-    ap.add_argument("--optimizer", default="lbfgs", choices=["adam", "lbfgs"],
-                    help="lbfgs (quasi-Newton) converges the correlation-flattened ridge Adam cannot")
+    ap.add_argument("--optimizer", default="lbfgs", choices=["adam", "lbfgs", "adaptive"],
+                    help="lbfgs (quasi-Newton) converges the correlation-flattened ridge Adam cannot; "
+                         "adaptive runs the same line search in chunks and stops when the objective "
+                         "levels off rather than when a budget runs out, for products that do not "
+                         "settle inside a fixed iteration count")
+    ap.add_argument("--plateau-tol", type=float, default=0.1,
+                    help="--optimizer adaptive: stop once a whole chunk of iterations buys less "
+                         "objective than this")
+    ap.add_argument("--chunk", type=int, default=60,
+                    help="--optimizer adaptive: L-BFGS iterations per chunk; the plateau test is "
+                         "applied to the gain over one chunk, not to a single step")
     ap.add_argument("--rho-max", type=float, default=None,
                     help="cap the correlated fraction rho (guards the rho<->discrepancy confound; "
                          "e.g. 0.9 for the mAb A guard). Default: uncapped (profile-ML rho).")
@@ -876,6 +986,10 @@ def main():
                     help="truncated-Newton steps in the stiff subspace before the reparam (converges the "
                          "data-constrained directions L-BFGS leaves off-minimum; 0 disables).")
     ap.add_argument("--reparam-damping", type=float, default=0.7, help="damping for the stiff-subspace polish steps.")
+    ap.add_argument("--out", default=None,
+                    help="where to write {product}_correlated.json. The posterior npz follows the same "
+                         "stem, so pointing this outside results/bayes keeps a probe run -- a larger "
+                         "map-iteration budget, say -- from overwriting the deployed artifacts.")
     ap.add_argument("--c-param-out", default=None,
                     help="where to merge this product's C_param_corr. Default results/bayes/"
                          "c_param_correlated.json, which is SHARED across products and read by the "
@@ -889,15 +1003,18 @@ def main():
     if a.multistart:
         multistart_correlated(a.product, decf, n_restarts=a.multistart, scale=a.multistart_scale,
                               seed=a.seed, kernel=a.kernel, n_steps=a.n_steps, map_iters=a.map_iters,
-                              optimizer=a.optimizer, rho_max=a.rho_max)
+                              optimizer=a.optimizer, rho_max=a.rho_max,
+                              plateau_tol=a.plateau_tol, chunk=a.chunk)
     elif a.decision_loeo:
         decision_loeo_correlated(a.product, decf, kernel=a.kernel, n_steps=a.n_steps,
-                                 map_iters=a.map_iters, optimizer=a.optimizer, rho_max=a.rho_max)
+                                 map_iters=a.map_iters, optimizer=a.optimizer, rho_max=a.rho_max,
+                                 plateau_tol=a.plateau_tol, chunk=a.chunk)
     else:
         refit_correlated(a.product, decf, kernel=a.kernel, n_steps=a.n_steps, map_iters=a.map_iters,
                          optimizer=a.optimizer, rho_max=a.rho_max, reparam=a.reparam,
                          reparam_polish=a.reparam_polish, reparam_damping=a.reparam_damping,
-                         cpath=a.c_param_out)
+                         out=a.out, cpath=a.c_param_out,
+                         plateau_tol=a.plateau_tol, chunk=a.chunk)
 
 
 if __name__ == "__main__":

@@ -226,6 +226,13 @@ def run_product_hier_scan(product, *, in_dir, out_dir, n_candidates, n_steps, n_
                          "sigma_meas": [float(x) for x in sigma_meas],
                          "loading_cap": float(loading_cap), "spec": [float(x) for x in spec]}
     res["rel_frobenius"] = relf
+    # The engineering branch is the stratified rule of article Section 2.3 applied to the scan's own
+    # probabilities; ``scan_flag`` above is the scan's gate flag and is not that branch.
+    from bayes_pool_refinement import DEPLOY, branch_of
+    dom = DEPLOY.get(product)
+    res["engineering_branch"] = (branch_of(np.array([r["p_meet"] for r in res["rows"]]),
+                                           np.array([r["loading"] for r in res["rows"]]), *dom)[0]
+                                 if dom else None)
     out = Path(out_dir); out.mkdir(parents=True, exist_ok=True)
     (out / f"{product}_decision_window_predictive_hier.json").write_text(json.dumps(res, indent=2))
     h = res["historical"]; cand = res.get("recommended_candidate")
@@ -236,7 +243,7 @@ def run_product_hier_scan(product, *, in_dir, out_dir, n_candidates, n_steps, n_
         print(f"  FIXED best in-domain candidate {[round(x,1) for x in cand['op']]} ({cand['loading']:.1f} g/L): "
               f"P(meet)={cand['p_meet_marginal']:.3f} [{cand['p_meet_ci'][0]:.2f},{cand['p_meet_ci'][1]:.2f}]  "
               f"Pr(decisive|D)={cand['p_action_decisive']:.3f}  Pr(move|D)={cand['p_move_given_D']:.3f}")
-    print(f"  ACTION: {res['action']}  -> {out / f'{product}_decision_window_predictive_hier.json'}")
+    print(f"  SCAN FLAG: {res['scan_flag']}  BRANCH: {res['engineering_branch']}  -> {out / f'{product}_decision_window_predictive_hier.json'}")
     return res
 
 

@@ -34,7 +34,7 @@ from cex_model.bayes.compare import filter_experiments
 from cex_model.bayes.decision import _pool_quantities, decision_jacobian
 from cex_model.bayes.groenwall import _PRODUCT_MAP
 from cex_model.bayes.posterior import Posterior
-from cex_model.bayes.prior import physical_u_bounds
+from cex_model.bayes.prior import solver_guard_bounds
 
 __all__ = ["g_rk23", "decision_jacobian_rk23", "worst_dec_from_G", "worst_dec_from_GL",
            "directional_jacobian", "decision_gl_rk23", "certify_solver_agnostic"]
@@ -60,7 +60,7 @@ def decision_jacobian_rk23(post, bundle, op, *, window_s, main_idx, fd_rel: floa
 
     Per-coordinate step ``h_j = fd_rel·max(1,|u_j|)`` (handles the mixed log/linear ``u`` packing).
     Costs ``2·dim`` RK23 forward solves (≈ minutes per product on the truth path)."""
-    lo, hi = physical_u_bounds(post.n_protein)
+    lo, hi = solver_guard_bounds(post.n_protein)
     u = np.asarray(post.u_map, float)
     g0 = g_rk23(u, post, bundle, op, window_s=window_s, main_idx=main_idx, lo=lo, hi=hi)
     G = np.zeros((g0.size, u.size))
@@ -137,7 +137,7 @@ def decision_gl_rk23(post, bundle, op, *, window_s, main_idx, base_h: float = 0.
     """``D = G L`` (k×dim) on the RK23 reference by whitened directional FD (:func:`directional_jacobian`
     with the RK23 decision quantity ``g``).  Feeds :func:`worst_dec_from_GL` for a well-conditioned,
     solver-independent ``worst_dec`` that the raw-coordinate FD cannot give on wide-``Σ`` products."""
-    lo, hi = physical_u_bounds(post.n_protein)
+    lo, hi = solver_guard_bounds(post.n_protein)
     L = _chol_psd(post.cov)
 
     def g_eval(u):

@@ -1,6 +1,6 @@
 """Emit the Supplement A result tables as LaTeX, straight from the committed JSON.
 
-Three tables, so that a reviewer never has to open a result file to audit a number:
+Four tables, so that a reviewer never has to open a result file to audit a number:
   s:tab-r2   the joint-region linearisation certificate, per product
   s:tab-r5b  the local decision-calibration study, per product x law
   s:tab-r6a  the hierarchy-in-the-loop study, rank calibration
@@ -48,16 +48,18 @@ def _ci(c, d=2):
 
 
 def table_r2():
-    rows = json.loads(next(R.glob("r2_paired_coupling_*.json")).read_text())
+    # the three-product historical-condition run, not the candidate-level ones, whose filenames carry an
+    # "_op" tag and which glob ahead of it in directory order
+    src = R / "r2_paired_coupling_HLXSYN_HLXSYN_HLXSYN.json"
+    rows = json.loads(src.read_text())
     pct = "\\%"
     lines = [
         (r"paired posterior draws $N$", lambda r: f"${r['n_draws']}$"),
-        (r"nonlinear $P(\text{meet})$", lambda r: f"${r['P_X_meet_nonlinear']:.4f}$"),
+        (r"nonlinear $P(\text{meet})$, conditional law", lambda r: f"${r['P_X_meet_nonlinear']:.4f}$"),
         (r"linearised $P(\text{meet})$, clipped law, $N$ draws", lambda r: f"${r['P_Y_meet_linear']:.4f}$"),
-        (r"\quad same, $4\times10^{6}$ draws (bridge input)", lambda r: f"${r['P_lin_clipped']:.4f}$"),
         (r"linearised $P(\text{meet})$, untruncated", lambda r: f"${r['P_lin_untruncated']:.4f}$"),
         (r"observed gap", lambda r: f"${r['observed_gap']:.4f}$"),
-        (r"draws clipped to the physical box", lambda r: f"${100 * r['clip_fraction_tube']:.0f}{pct}$"),
+        (r"draws clipped to the solver support", lambda r: f"${100 * r['clip_fraction_paired']:.0f}{pct}$"),
         (r"grid point $t^\ast$", lambda r: f"${r['t_star']:.2f}$"),
         (r"boundary tube $\hat t_1$", lambda r: f"${r['term1_tube_hat']:.5f}$"),
         (r"\quad Clopper--Pearson upper $t_1^{+}$", lambda r: f"${r['term1_tube_upper']:.5f}$"),
@@ -79,11 +81,8 @@ def table_r2():
            r"the stored $t^\ast$. Each is bounded by an exact one-sided Clopper--Pearson rate at "
            r"$\alpha=\delta/(2m+2)$ per test, with $\delta=0.05$, $m=50$ grid points and the two extra tests the bridge needs, so the $0.95$ is the level delivered rather than the level budgeted before the bridge was counted; and the "
            r"support-gap bridge carries the certificate from the clipped law to the untruncated "
-           r"$P_{\rm lin}$ the pipeline reports, on which the interval is centred; $b$ is the sum of the "
-           r"three uppers. The bridge is computed from the $4\times10^{6}$-draw clipped estimate, which is "
-           r"why that row is given separately from the $N$-draw one. The "
-           r"finite-sample share is $(b-\text{floor})/b$: on \pC{} only a tenth of the width is sampling error, "
-           r"so more draws would not rescue the classification.}",
+           r"$P_{\rm lin}$ the pipeline reports, on which the interval is centred. $b$ is the sum of the "
+           r"three uppers and the finite-sample share is $(b-\text{floor})/b$.}",
            r"\label{s:tab-r2}", r"\footnotesize",
            r"\begin{tabular}{@{}l" + "c" * len(rows) + r"@{}}", r"\toprule",
            " & " + " & ".join(LABEL[r["product"]] for r in rows) + r" \\", r"\midrule"]
@@ -100,9 +99,10 @@ def table_r5b():
            r"simulation-based-calibration ranks against $\mathrm{U}(0,1)$ for the two decision quantities, and "
            r"of the joint two-dimensional Mahalanobis probability integral transform; not rejected at "
            r"$0.05/3=0.017$ (Bonferroni over the three). The remaining columns score $P(\text{meet})$ at a fixed "
-           r"action. \pB{} is degenerate throughout: $P(\text{meet})=0$ at every candidate, so only the rank "
-           r"half is informative. The $s=1$ block is the regime control: there the conditional law fails even "
-           r"with no discrepancy, which is why the calibration claim is read at $s\le\tfrac12$.}",
+           r"action; $^{*}$ECE is expected calibration error over ten equal-width bins. \pB{} is degenerate "
+           r"throughout: $P(\text{meet})=0$ at every candidate, so only the rank half is informative. Both "
+           r"blocks are generated with a decision discrepancy; the $s=1$ block widens the reference scale, "
+           r"and the no-discrepancy control quoted in the text is a separate run, not shown here.}",
            r"\label{s:tab-r5b}", r"\footnotesize",
            r"\begin{tabular}{@{}llccccccc@{}}", r"\toprule",
            r"$s$ & & law & KS purity & KS yield & KS joint & ECE & Brier & tail $n$@hit \\", r"\midrule"]
